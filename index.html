@@ -386,96 +386,297 @@ function commitDrop() {
 }
 
 // ─────────────────────────────────────────────────────
-// IMAGE PIPELINE
-// 1. Fetch photo URLs from Pexels (CORS-safe, allows GitHub Pages)
-// 2. Load each photo into a canvas
-// 3. Send to remove.bg → transparent cutout
-// Tray shows photo first, upgrades to cutout when ready
-// ─────────────────────────────────────────────────────
+// IMAGE GENERATION — SVG objects with transparent background
+// Each SVG is a recognizable object drawn with paths.
+// Rendered to canvas — always transparent, no API needed.
 
-function loadImage(url, tw, th) {
+const OBJECTS = [
+  // Rose flower
+  (w,h) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="${w}" height="${h}">
+    <ellipse cx="50" cy="55" rx="22" ry="28" fill="#e63946"/>
+    <ellipse cx="38" cy="48" rx="16" ry="20" fill="#f4a261" opacity=".85"/>
+    <ellipse cx="62" cy="48" rx="16" ry="20" fill="#c1121f" opacity=".85"/>
+    <ellipse cx="50" cy="40" rx="14" ry="18" fill="#e63946"/>
+    <ellipse cx="50" cy="35" rx="8" ry="10" fill="#f4a261" opacity=".9"/>
+    <path d="M50 80 Q44 92 38 98" stroke="#2d6a4f" stroke-width="3" fill="none" stroke-linecap="round"/>
+    <ellipse cx="36" cy="91" rx="10" ry="6" fill="#40916c" transform="rotate(-30,36,91)"/>
+  </svg>`,
+
+  // Butterfly
+  (w,h) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="${w}" height="${h}">
+    <ellipse cx="28" cy="38" rx="24" ry="18" fill="#f4a261" opacity=".9" transform="rotate(-25,28,38)"/>
+    <ellipse cx="72" cy="38" rx="24" ry="18" fill="#f4a261" opacity=".9" transform="rotate(25,72,38)"/>
+    <ellipse cx="32" cy="65" rx="16" ry="12" fill="#e63946" opacity=".85" transform="rotate(20,32,65)"/>
+    <ellipse cx="68" cy="65" rx="16" ry="12" fill="#e63946" opacity=".85" transform="rotate(-20,68,65)"/>
+    <ellipse cx="28" cy="38" rx="14" ry="10" fill="#ffbe0b" opacity=".7" transform="rotate(-25,28,38)"/>
+    <ellipse cx="72" cy="38" rx="14" ry="10" fill="#ffbe0b" opacity=".7" transform="rotate(25,72,38)"/>
+    <path d="M50 25 Q48 50 50 75 Q52 50 50 25" stroke="#1a1a2e" stroke-width="3" fill="none"/>
+    <circle cx="50" cy="23" r="4" fill="#1a1a2e"/>
+    <path d="M50 20 Q42 10 36 14 M50 20 Q58 10 64 14" stroke="#1a1a2e" stroke-width="1.5" fill="none"/>
+  </svg>`,
+
+  // Camera
+  (w,h) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="${w}" height="${h}">
+    <rect x="10" y="32" width="80" height="52" rx="8" fill="#2b2d42"/>
+    <rect x="30" y="22" width="28" height="14" rx="4" fill="#2b2d42"/>
+    <circle cx="50" cy="58" r="18" fill="#8d99ae"/>
+    <circle cx="50" cy="58" r="13" fill="#edf2f4"/>
+    <circle cx="50" cy="58" r="9" fill="#457b9d"/>
+    <circle cx="50" cy="58" r="5" fill="#1d3557"/>
+    <circle cx="54" cy="54" r="2" fill="white" opacity=".6"/>
+    <rect x="70" y="40" width="10" height="7" rx="2" fill="#e63946"/>
+    <circle cx="20" cy="42" r="4" fill="#457b9d"/>
+  </svg>`,
+
+  // Sunflower
+  (w,h) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="${w}" height="${h}">
+    ${Array.from({length:12},(_,i)=>{const a=i*30*Math.PI/180; const x=50+Math.cos(a)*26, y=45+Math.sin(a)*26; return `<ellipse cx="${x}" cy="${y}" rx="9" ry="5" fill="#ffbe0b" transform="rotate(${i*30},${x},${y})"/>`}).join('')}
+    <circle cx="50" cy="45" r="16" fill="#6d4c2a"/>
+    <circle cx="50" cy="45" r="13" fill="#4a3120"/>
+    ${Array.from({length:7},(_,i)=>{const x=42+Math.random()*16, y=37+Math.random()*16; return `<circle cx="${x+i}" cy="${y}" r="1.5" fill="#ffbe0b" opacity=".6"/>`;}).join('')}
+    <path d="M50 62 L50 95" stroke="#2d6a4f" stroke-width="4" stroke-linecap="round"/>
+    <ellipse cx="38" cy="80" rx="12" ry="7" fill="#40916c" transform="rotate(-20,38,80)"/>
+  </svg>`,
+
+  // Cat face
+  (w,h) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="${w}" height="${h}">
+    <polygon points="20,42 12,18 36,35" fill="#f4a261"/>
+    <polygon points="80,42 88,18 64,35" fill="#f4a261"/>
+    <polygon points="22,40 16,22 34,35" fill="#ffb347" opacity=".6"/>
+    <polygon points="78,40 84,22 66,35" fill="#ffb347" opacity=".6"/>
+    <ellipse cx="50" cy="60" rx="35" ry="32" fill="#f4a261"/>
+    <ellipse cx="34" cy="52" rx="9" ry="12" fill="#1a1a2e"/>
+    <ellipse cx="66" cy="52" rx="9" ry="12" fill="#1a1a2e"/>
+    <ellipse cx="34" cy="52" rx="4" ry="10" fill="#1a1a2e"/>
+    <ellipse cx="66" cy="52" rx="4" ry="10" fill="#1a1a2e"/>
+    <circle cx="36" cy="50" r="2" fill="white"/>
+    <circle cx="68" cy="50" r="2" fill="white"/>
+    <path d="M44 68 Q50 73 56 68" stroke="#c1121f" stroke-width="2" fill="none"/>
+    <ellipse cx="50" cy="66" rx="5" ry="3.5" fill="#e63946"/>
+    <path d="M30 65 Q18 62 10 65 M30 65 Q18 68 10 65" stroke="#1a1a2e" stroke-width="1.2" fill="none"/>
+    <path d="M70 65 Q82 62 90 65 M70 65 Q82 68 90 65" stroke="#1a1a2e" stroke-width="1.2" fill="none"/>
+  </svg>`,
+
+  // Coffee cup
+  (w,h) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="${w}" height="${h}">
+    <path d="M20 35 L25 85 Q25 90 50 90 Q75 90 75 85 L80 35 Z" fill="#6f4e37"/>
+    <path d="M22 35 L26 80 Q26 86 50 86 Q74 86 74 80 L78 35 Z" fill="#8b5e3c"/>
+    <rect x="18" y="32" width="64" height="8" rx="3" fill="#5c3d1e"/>
+    <path d="M78 45 Q92 45 92 57 Q92 68 78 68" stroke="#6f4e37" stroke-width="5" fill="none" stroke-linecap="round"/>
+    <ellipse cx="50" cy="50" rx="22" ry="10" fill="#3e2012" opacity=".5"/>
+    <path d="M38 20 Q40 12 38 5" stroke="#adb5bd" stroke-width="2" fill="none" stroke-linecap="round"/>
+    <path d="M50 18 Q52 10 50 3" stroke="#adb5bd" stroke-width="2" fill="none" stroke-linecap="round"/>
+    <path d="M62 20 Q64 12 62 5" stroke="#adb5bd" stroke-width="2" fill="none" stroke-linecap="round"/>
+  </svg>`,
+
+  // Sneaker shoe
+  (w,h) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 80" width="${w}" height="${h}">
+    <path d="M10 55 Q15 30 40 28 Q55 27 65 32 L100 38 Q112 42 112 52 Q112 62 95 64 L18 64 Q8 64 10 55Z" fill="#e63946"/>
+    <path d="M40 28 Q48 18 58 20 Q68 22 65 32" fill="#f4a261"/>
+    <path d="M10 55 L95 55" stroke="white" stroke-width="2" opacity=".5"/>
+    <path d="M30 28 L28 55 M45 27 L43 55 M60 30 L58 55" stroke="white" stroke-width="1.5" opacity=".4"/>
+    <path d="M10 62 Q50 68 112 62 L112 66 Q50 72 10 66Z" fill="#1a1a2e"/>
+    <path d="M58 20 Q75 14 88 20 Q95 24 100 38" fill="#c1121f"/>
+  </svg>`,
+
+  // Polaroid photo
+  (w,h) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 90 100" width="${w}" height="${h}">
+    <rect x="5" y="5" width="80" height="90" rx="3" fill="white" filter="drop-shadow(2px 2px 4px rgba(0,0,0,0.3))"/>
+    <rect x="12" y="12" width="66" height="60" fill="#457b9d"/>
+    <rect x="12" y="12" width="66" height="60" fill="url(#pg)"/>
+    <defs><linearGradient id="pg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#a8dadc"/><stop offset="1" stop-color="#1d3557"/></linearGradient></defs>
+    <ellipse cx="35" cy="38" rx="12" ry="14" fill="#f4a261" opacity=".8"/>
+    <ellipse cx="58" cy="42" rx="9" ry="11" fill="#e63946" opacity=".7"/>
+    <rect x="22" y="76" width="46" height="4" rx="2" fill="#adb5bd" opacity=".5"/>
+  </svg>`,
+
+  // Leaf
+  (w,h) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 100" width="${w}" height="${h}">
+    <path d="M40 95 Q5 70 8 35 Q10 8 40 5 Q70 8 72 35 Q75 70 40 95Z" fill="#2d6a4f"/>
+    <path d="M40 95 Q8 68 10 35 Q12 10 40 7" fill="#40916c" opacity=".6"/>
+    <path d="M40 95 L40 5" stroke="#1b4332" stroke-width="2.5"/>
+    <path d="M40 30 Q25 25 15 30 M40 45 Q22 38 12 42 M40 60 Q24 55 16 58 M40 30 Q55 25 65 30 M40 45 Q58 38 68 42 M40 60 Q56 55 64 58" stroke="#1b4332" stroke-width="1.2" fill="none"/>
+    <path d="M40 7 Q42 5 40 5" fill="#52b788"/>
+  </svg>`,
+
+  // Diamond gem
+  (w,h) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 90" width="${w}" height="${h}">
+    <polygon points="50,5 85,35 50,85 15,35" fill="#4cc9f0" opacity=".9"/>
+    <polygon points="50,5 85,35 50,45" fill="#7bdff2" opacity=".9"/>
+    <polygon points="50,5 15,35 50,45" fill="#48cae4" opacity=".9"/>
+    <polygon points="15,35 50,45 50,85" fill="#0096c7"/>
+    <polygon points="85,35 50,45 50,85" fill="#023e8a" opacity=".85"/>
+    <polygon points="25,35 50,15 75,35 50,45" fill="white" opacity=".3"/>
+    <polygon points="50,5 62,28 50,35 38,28" fill="white" opacity=".4"/>
+  </svg>`,
+
+  // Lightning bolt
+  (w,h) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 70 100" width="${w}" height="${h}">
+    <polygon points="42,5 10,52 35,52 28,95 60,48 36,48" fill="#ffbe0b"/>
+    <polygon points="42,5 15,52 35,52 30,80 55,48 36,48" fill="#f4a261" opacity=".5"/>
+    <polygon points="42,5 22,52 35,52" fill="white" opacity=".3"/>
+  </svg>`,
+
+  // Eye
+  (w,h) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 70" width="${w}" height="${h}">
+    <path d="M10 35 Q60 5 110 35 Q60 65 10 35Z" fill="white"/>
+    <path d="M10 35 Q60 8 110 35" fill="none" stroke="#1a1a2e" stroke-width="1.5"/>
+    <circle cx="60" cy="35" r="18" fill="#457b9d"/>
+    <circle cx="60" cy="35" r="13" fill="#1a1a2e"/>
+    <circle cx="60" cy="35" r="8" fill="#2b2d42"/>
+    <circle cx="65" cy="30" r="4" fill="white" opacity=".7"/>
+    <circle cx="57" cy="38" r="2" fill="white" opacity=".4"/>
+    <path d="M10 35 Q60 62 110 35" fill="none" stroke="#1a1a2e" stroke-width="1.5"/>
+  </svg>`,
+
+  // Star
+  (w,h) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="${w}" height="${h}">
+    <polygon points="50,5 61,35 95,35 68,57 79,91 50,70 21,91 32,57 5,35 39,35" fill="#ffbe0b"/>
+    <polygon points="50,5 61,35 95,35 68,57 79,91 50,70 21,91 32,57 5,35 39,35" fill="url(#sg)" opacity=".4"/>
+    <defs><linearGradient id="sg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="white"/><stop offset="1" stop-color="#f4a261"/></linearGradient></defs>
+    <polygon points="50,15 58,38 82,38 64,52 71,76 50,62 29,76 36,52 18,38 42,38" fill="#f4d03f" opacity=".6"/>
+  </svg>`,
+
+  // Lips
+  (w,h) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 70" width="${w}" height="${h}">
+    <path d="M20 35 Q35 15 60 20 Q85 15 100 35 Q85 58 60 55 Q35 58 20 35Z" fill="#e63946"/>
+    <path d="M20 35 Q35 18 60 22 Q85 18 100 35" fill="#c1121f" opacity=".4"/>
+    <path d="M35 35 Q60 28 85 35" stroke="#c1121f" stroke-width="1.5" fill="none"/>
+    <path d="M20 35 Q35 18 60 22 Q85 18 100 35 Q85 45 60 43 Q35 45 20 35Z" fill="none" stroke="#c1121f" stroke-width="1"/>
+    <path d="M42 25 Q60 20 78 25 Q60 22 42 25Z" fill="white" opacity=".25"/>
+    <path d="M38 35 Q60 30 82 35" stroke="white" stroke-width="1" opacity=".2" fill="none"/>
+  </svg>`,
+
+  // Moon
+  (w,h) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 90 100" width="${w}" height="${h}">
+    <path d="M55 5 Q20 20 18 50 Q16 80 50 95 Q15 88 10 55 Q5 22 55 5Z" fill="#f4d03f"/>
+    <path d="M55 5 Q22 22 20 50 Q18 78 50 93" fill="#f0b429" opacity=".5"/>
+    <circle cx="30" cy="28" r="4" fill="#f0b429" opacity=".4"/>
+    <circle cx="22" cy="55" r="3" fill="#f0b429" opacity=".3"/>
+    <circle cx="38" cy="72" r="5" fill="#f0b429" opacity=".35"/>
+  </svg>`,
+
+  // Cactus
+  (w,h) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 110" width="${w}" height="${h}">
+    <rect x="30" y="20" width="20" height="75" rx="10" fill="#40916c"/>
+    <rect x="30" y="20" width="10" height="75" rx="7" fill="#52b788" opacity=".5"/>
+    <path d="M30 50 Q10 50 10 35 Q10 22 22 22 L30 22" fill="none" stroke="#40916c" stroke-width="14" stroke-linecap="round"/>
+    <path d="M50 45 Q70 45 70 30 Q70 17 58 17 L50 17" fill="none" stroke="#40916c" stroke-width="14" stroke-linecap="round"/>
+    <rect x="22" y="90" width="36" height="12" rx="4" fill="#6f4e37"/>
+    <rect x="18" y="98" width="44" height="8" rx="3" fill="#8b5e3c"/>
+    <line x1="34" y1="30" x2="30" y2="26" stroke="#2d6a4f" stroke-width="1.5"/>
+    <line x1="34" y1="38" x2="29" y2="36" stroke="#2d6a4f" stroke-width="1.5"/>
+    <line x1="46" y1="35" x2="50" y2="31" stroke="#2d6a4f" stroke-width="1.5"/>
+  </svg>`,
+
+  // Flamingo
+  (w,h) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 110" width="${w}" height="${h}">
+    <ellipse cx="45" cy="55" rx="20" ry="28" fill="#ffb3c6" transform="rotate(-15,45,55)"/>
+    <ellipse cx="42" cy="50" rx="14" ry="20" fill="#ff85a1" opacity=".6" transform="rotate(-15,42,50)"/>
+    <path d="M45 28 Q50 5 42 2 Q36 0 38 12 Q40 20 45 28" fill="#ffb3c6"/>
+    <circle cx="40" cy="8" r="8" fill="#ffb3c6"/>
+    <path d="M40 12 Q30 18 28 22 Q30 24 38 20" fill="#ff6b9d" stroke="#ff6b9d" stroke-width="1"/>
+    <circle cx="37" cy="7" r="2" fill="#1a1a2e"/>
+    <circle cx="38" cy="6.5" r="0.8" fill="white"/>
+    <path d="M45 80 L42 100 L38 100 L40 80" fill="#ff6b9d"/>
+    <path d="M42 100 L35 105 M38 100 L44 105" stroke="#ff6b9d" stroke-width="3" stroke-linecap="round"/>
+  </svg>`,
+
+  // Mushroom
+  (w,h) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 90 100" width="${w}" height="${h}">
+    <path d="M15 55 Q15 20 45 12 Q75 20 75 55Z" fill="#e63946"/>
+    <path d="M15 55 Q15 22 45 14" fill="#f4a261" opacity=".4"/>
+    <circle cx="30" cy="38" r="8" fill="white" opacity=".85"/>
+    <circle cx="55" cy="30" r="6" fill="white" opacity=".85"/>
+    <circle cx="62" cy="50" r="7" fill="white" opacity=".85"/>
+    <circle cx="38" cy="52" r="5" fill="white" opacity=".75"/>
+    <path d="M28 55 Q30 70 40 75 Q50 78 55 72 Q60 68 62 55" fill="#f5f0e8"/>
+    <path d="M28 55 Q30 68 40 73 Q50 76 62 55" fill="#e8ddd0" opacity=".5"/>
+    <path d="M35 60 L35 75 M45 58 L45 76 M55 60 L55 72" stroke="#c9b89a" stroke-width="1.5"/>
+  </svg>`,
+
+  // Cherry
+  (w,h) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 90 100" width="${w}" height="${h}">
+    <path d="M35 45 Q50 10 65 45" stroke="#2d6a4f" stroke-width="3" fill="none" stroke-linecap="round"/>
+    <path d="M50 15 Q55 5 62 8" stroke="#2d6a4f" stroke-width="2" fill="none" stroke-linecap="round"/>
+    <circle cx="28" cy="68" r="22" fill="#c1121f"/>
+    <circle cx="62" cy="65" r="20" fill="#e63946"/>
+    <circle cx="22" cy="62" r="7" fill="#ff6b6b" opacity=".5"/>
+    <circle cx="55" cy="58" r="6" fill="#ff8c8c" opacity=".5"/>
+    <circle cx="22" cy="62" r="3" fill="white" opacity=".4"/>
+    <circle cx="55" cy="58" r="2.5" fill="white" opacity=".4"/>
+  </svg>`,
+
+  // Crown
+  (w,h) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 110 80" width="${w}" height="${h}">
+    <polygon points="10,65 10,25 30,45 55,10 80,45 100,25 100,65" fill="#ffbe0b"/>
+    <polygon points="10,65 10,28 28,46 55,13 82,46 100,28 100,65" fill="#f4d03f" opacity=".5"/>
+    <rect x="8" y="62" width="94" height="14" rx="4" fill="#f4a261"/>
+    <rect x="8" y="62" width="94" height="7" rx="3" fill="#ffbe0b" opacity=".4"/>
+    <circle cx="55" cy="13" r="7" fill="#e63946"/>
+    <circle cx="10" cy="27" r="5" fill="#457b9d"/>
+    <circle cx="100" cy="27" r="5" fill="#457b9d"/>
+    <circle cx="28" cy="67" r="5" fill="#e63946" opacity=".8"/>
+    <circle cx="55" cy="67" r="5" fill="#2d6a4f" opacity=".8"/>
+    <circle cx="82" cy="67" r="5" fill="#e63946" opacity=".8"/>
+  </svg>`,
+];
+
+function svgToCanvas(svgStr, tw, th) {
   return new Promise(resolve => {
-    const img=new Image(); img.crossOrigin='anonymous';
-    img.onload=()=>{
-      const c=document.createElement('canvas'); c.width=tw; c.height=th;
-      const x=c.getContext('2d'); x.clearRect(0,0,tw,th);
-      const s=Math.max(tw/img.naturalWidth,th/img.naturalHeight);
-      x.drawImage(img,(img.naturalWidth-tw/s)/2,(img.naturalHeight-th/s)/2,tw/s,th/s,0,0,tw,th);
+    const blob = new Blob([svgStr], {type:'image/svg+xml'});
+    const url  = URL.createObjectURL(blob);
+    const img  = new Image();
+    img.onload = () => {
+      const c = document.createElement('canvas');
+      c.width = tw; c.height = th;
+      const ctx = c.getContext('2d');
+      ctx.clearRect(0, 0, tw, th);
+      ctx.drawImage(img, 0, 0, tw, th);
+      URL.revokeObjectURL(url);
       resolve(c);
     };
-    img.onerror=()=>resolve(null); img.src=url;
+    img.onerror = () => { URL.revokeObjectURL(url); resolve(null); };
+    img.src = url;
   });
 }
 
-// removeBg: tries Hugging Face (free, any subject) then remove.bg as fallback
-async function removeBg(srcCanvas) {
-  // Try Hugging Face first — free tier, works on people/objects/animals/landscapes
-  const hfResult = await removeBgHuggingFace(srcCanvas);
-  if (hfResult) return hfResult;
-  // Fallback to remove.bg (50 free credits/month)
-  return await removeBgRemoveBg(srcCanvas);
+async function loadTray(query='') {
+  tray.innerHTML='';
+
+  // Show skeletons
+  for (let i=0; i<THUMB_COUNT; i++) {
+    const tw=Math.round(THUMB_H*ASPECTS[i%ASPECTS.length]);
+    const sk=document.createElement('div');
+    sk.className='thumb loading'; sk.id='sk'+i; sk.style.width=tw+'px';
+    tray.appendChild(sk);
+  }
+
+  // Pick a shuffled set of objects based on query seed
+  const seed  = query ? query.split('').reduce((a,c)=>a+c.charCodeAt(0),0) : Math.floor(Math.random()*9999);
+  const order = [...Array(OBJECTS.length).keys()].sort(()=>(seed%7)-3.5+(Math.random()-0.5));
+  const picks = order.slice(0, THUMB_COUNT);
+
+  await Promise.all(picks.map(async (objIdx, i) => {
+    const tw  = Math.round(THUMB_H*ASPECTS[i%ASPECTS.length]);
+    const th  = THUMB_H;
+    const svg = OBJECTS[objIdx](tw*2, th*2);
+    const src = await svgToCanvas(svg, tw*2, th*2);
+    const sk  = document.getElementById('sk'+i);
+    if (src && sk?.isConnected) setThumb(sk, src, tw, th);
+  }));
 }
 
-async function removeBgHuggingFace(srcCanvas) {
-  try {
-    const blob = await new Promise(r => srcCanvas.toBlob(r, 'image/png'));
-    const res  = await fetch(
-      'https://api-inference.huggingface.co/models/briaai/RMBG-1.4',
-      { method: 'POST', headers: { 'Content-Type': 'application/octet-stream' }, body: blob }
-    );
-    if (!res.ok) return null;
-    const url = URL.createObjectURL(await res.blob());
-    return new Promise(resolve => {
-      const img = new Image();
-      img.onload = () => {
-        const c = document.createElement('canvas');
-        c.width  = srcCanvas.width; c.height = srcCanvas.height;
-        const cx = c.getContext('2d');
-        cx.clearRect(0, 0, c.width, c.height);
-        cx.drawImage(img, 0, 0, c.width, c.height);
-        URL.revokeObjectURL(url); resolve(c);
-      };
-      img.onerror = () => { URL.revokeObjectURL(url); resolve(null); };
-      img.src = url;
-    });
-  } catch { return null; }
-}
-
-async function removeBgRemoveBg(srcCanvas) {
-  try {
-    const blob = await new Promise(r => srcCanvas.toBlob(r, 'image/png'));
-    const fd   = new FormData();
-    fd.append('image_file', blob, 'img.png'); fd.append('size', 'auto');
-    const res  = await fetch('https://api.remove.bg/v1.0/removebg',
-      { method:'POST', headers:{'X-Api-Key':REMOVEBG_KEY}, body:fd });
-    if (!res.ok) return null;
-    const url = URL.createObjectURL(await res.blob());
-    return new Promise(resolve => {
-      const img = new Image();
-      img.onload = () => {
-        const c = document.createElement('canvas');
-        c.width = srcCanvas.width; c.height = srcCanvas.height;
-        const cx = c.getContext('2d');
-        cx.clearRect(0, 0, c.width, c.height);
-        cx.drawImage(img, 0, 0, c.width, c.height);
-        URL.revokeObjectURL(url); resolve(c);
-      };
-      img.onerror = () => { URL.revokeObjectURL(url); resolve(null); };
-      img.src = url;
-    });
-  } catch { return null; }
-}
-
-function setThumb(sk, src, tw, th, transparent) {
+function setThumb(sk, src, tw, th) {
   if (!sk?.isConnected) return;
-  sk.className='thumb ready';
-  sk.style.cssText=`width:${tw}px;height:${th}px;transform:rotate(${(Math.random()-0.5)*14}deg);margin-top:${(Math.random()-0.5)*16}px;`
-    +(transparent?'background:repeating-conic-gradient(#2a2a2a 0% 25%,#1e1e1e 0% 50%) 0 0/8px 8px;':'background:#222;');
+  sk.className = 'thumb ready';
+  sk.style.cssText = `width:${tw}px;height:${th}px;`
+    + `transform:rotate(${(Math.random()-0.5)*14}deg);`
+    + `margin-top:${(Math.random()-0.5)*16}px;`
+    + `background:repeating-conic-gradient(#2a2a2a 0% 25%,#1e1e1e 0% 50%) 0 0/8px 8px;`;
   sk._src=src; sk._w=tw; sk._h=th;
-  const existing=sk.querySelector('canvas');
-  if (existing) existing.remove();
   const c=document.createElement('canvas'); c.width=tw; c.height=th;
-  c.getContext('2d').drawImage(src,0,0,tw,th);
+  c.getContext('2d').drawImage(src, 0, 0, tw, th);
   c.style.cssText='display:block;height:100%;width:auto;pointer-events:none;';
   sk.appendChild(c);
 }
@@ -483,45 +684,27 @@ function setThumb(sk, src, tw, th, transparent) {
 async function loadTray(query='') {
   tray.innerHTML='';
 
-  // Skeletons
-  for (let i=0;i<THUMB_COUNT;i++) {
-    const sk=document.createElement('div'); sk.className='thumb loading'; sk.id='sk'+i;
-    sk.style.width=Math.round(THUMB_H*ASPECTS[i%ASPECTS.length])+'px';
+  // Show skeletons immediately
+  for (let i=0; i<THUMB_COUNT; i++) {
+    const tw=Math.round(THUMB_H*ASPECTS[i%ASPECTS.length]);
+    const sk=document.createElement('div');
+    sk.className='thumb loading'; sk.id='sk'+i; sk.style.width=tw+'px';
     tray.appendChild(sk);
   }
 
-  // Fetch from Pexels — explicitly allows CORS
-  const term=query||RAND_TERMS[Math.floor(Math.random()*RAND_TERMS.length)];
-  let photos=[];
-  try {
-    const res=await fetch(
-      `https://api.pexels.com/v1/search?query=${encodeURIComponent(term)}&per_page=${THUMB_COUNT}&orientation=portrait`,
-      {headers:{Authorization:PEXELS_KEY}}
-    );
-    photos=(await res.json()).photos||[];
-  } catch(e) { console.warn('Pexels error:',e); }
+  // Use query as seed variation for visual variety
+  const baseSeed = query
+    ? query.split('').reduce((a,c)=>a+c.charCodeAt(0),0) * 7
+    : Math.floor(Math.random() * 10000);
 
-  if (!photos.length) {
-    for (let i=0;i<THUMB_COUNT;i++) document.getElementById('sk'+i)?.remove();
-    return;
+  // Generate all cutouts — instant, no network
+  for (let i=0; i<THUMB_COUNT; i++) {
+    const tw  = Math.round(THUMB_H*ASPECTS[i%ASPECTS.length]);
+    const th  = THUMB_H;
+    const src = generateCutout(baseSeed + i * 137, tw * 2, th * 2);
+    const sk  = document.getElementById('sk'+i);
+    if (sk) setThumb(sk, src, tw, th);
   }
-
-  // Load each photo + remove.bg in parallel
-  photos.forEach(async (photo, i) => {
-    const tw=Math.round(THUMB_H*ASPECTS[i%ASPECTS.length]), th=THUMB_H;
-    const sk=document.getElementById('sk'+i); if (!sk) return;
-
-    // Step 1: load original fast
-    const src=await loadImage(photo.src?.medium||photo.src?.small, tw*2, th*2);
-    if (!src||!sk.isConnected) return;
-    setThumb(sk,src,tw,th,false); // show with background
-
-    // Step 2: remove background (async, 1 credit each)
-    const cutout=await removeBg(src);
-    if (cutout&&sk.isConnected) setThumb(sk,cutout,tw,th,true); // upgrade to cutout
-  });
-
-  for (let i=photos.length;i<THUMB_COUNT;i++) document.getElementById('sk'+i)?.remove();
 }
 
 // ─────────────────────────────────────────────────────
