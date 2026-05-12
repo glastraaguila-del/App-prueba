@@ -130,8 +130,6 @@ const THUMB_H      = 100;
 const THUMB_COUNT  = 12;  // fewer = faster initial load
 const ITEM_SCALE   = 1.9;
 const ASPECTS      = [0.8,1.1,0.75,1.2,0.9,1.0,0.85,1.15,0.7,1.25,0.95,1.05];
-const RAND_TERMS   = ['portrait','fashion','nature','architecture','vintage',
-                      'people','flowers','abstract','city','minimal'];
 const BOTTOM       = 178;
 
 // ─────────────────────────────────────────────────────
@@ -385,62 +383,42 @@ function commitDrop() {
 
 // ─────────────────────────────────────────────────────
 // IMAGE LOADING
-// Two sources, both CORS-safe, both transparent:
-// 1. Twemoji (Twitter emoji) — modern flat style, via jsDelivr
-// 2. OpenMoji — more expressive style, via jsDelivr
-// Both are SVG, transparent bg, free, no API key.
-// Flip: each item stores a flipX state, toggled on long-press.
+// Giphy stickers via Cloudflare Worker proxy (resolves CORS).
+// Worker URL: silent-rice-55b5.glastraaguila.workers.dev
+// Stickers have transparent backgrounds by design.
+// Search uses keyword; default loads trending with random offset.
 
-const SOURCES = {
-  twemoji: (code) => `https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/svg/${code}.svg`,
-  openmoji: (code) => `https://cdn.jsdelivr.net/gh/hfg-gmuend/openmoji@15.0.0/color/svg/${code}.svg`,
-};
-
-// Curated list: [source, code] pairs — diverse, mature aesthetic
-const STICKERS = [
-  // Nature
-  ['t','1f335'],['t','1f337'],['t','1f338'],['t','1f339'],['t','1f33a'],
-  ['t','1f33b'],['t','1f332'],['t','1f333'],['t','1f334'],['t','1f341'],
-  ['t','1f342'],['t','1f343'],['t','1f344'],['t','1f490'],['t','1f30a'],
-  ['t','1f30b'],['t','1f30c'],['t','1f304'],['t','1f305'],['t','2600'],
-  ['t','1f319'],['t','1f315'],['t','2b50'],['t','26a1'],['t','2744'],
-  ['t','1f308'],['t','1f4a7'],['t','1f525'],
-  // Animals
-  ['t','1f408'],['t','1f415'],['t','1f98a'],['t','1f431'],['t','1f436'],
-  ['t','1f42c'],['t','1f98b'],['t','1f426'],['t','1f985'],['t','1f986'],
-  ['t','1f987'],['t','1f992'],['t','1f993'],['t','1f994'],['t','1f995'],
-  ['t','1f996'],['t','1f997'],['t','1f419'],['t','1f41f'],['t','1f422'],
-  ['t','1f98d'],['t','1f43c'],['t','1f98e'],
-  // Food
-  ['t','1f347'],['t','1f349'],['t','1f34b'],['t','1f34c'],['t','1f353'],
-  ['t','1f354'],['t','1f355'],['t','1f370'],['t','1f382'],['t','1f377'],
-  ['t','1f37b'],['t','2615'],['t','1f375'],['t','1f366'],['t','1f367'],
-  // Objects
-  ['t','1f4f8'],['t','1f3a8'],['t','1f3b8'],['t','1f3ba'],['t','1f3b9'],
-  ['t','1f4da'],['t','270f'],['t','1f4f0'],['t','1f4e6'],['t','1f381'],
-  ['t','1f380'],['t','1f484'],['t','1f451'],['t','1f460'],['t','1f9f2'],
-  ['t','1f9f3'],['t','1f9f4'],['t','1f9f5'],['t','1f9f6'],['t','1f9ff'],
-  ['t','1fa84'],['t','1f52e'],['t','1f9ea'],['t','1f9eb'],['t','1f9ec'],
-  // Travel & places
-  ['t','1f3d4'],['t','1f3d5'],['t','1f3d6'],['t','1f3d7'],['t','1f3db'],
-  ['t','1f3dc'],['t','26fa'],['t','1f6f8'],['t','2708'],['t','1f680'],
-  ['t','1f6f4'],['t','1f6b2'],['t','26f5'],['t','1f697'],
-  // Symbols & art
-  ['t','2764'],['t','1f9e1'],['t','1f49b'],['t','1f49a'],['t','1f499'],
-  ['t','1f49c'],['t','1f5a4'],['t','1f4ab'],['t','2728'],['t','1f4af'],
-  // OpenMoji extras (more expressive)
-  ['o','1F9B8'],['o','1F9B9'],['o','1F9CC'],['o','1FAB6'],['o','1FAB7'],
-  ['o','1FAB8'],['o','1FAB9'],['o','1FABA'],['o','1F9A9'],['o','1F9A6'],
-  ['o','1F9A7'],['o','1F9A8'],['o','1FAD0'],['o','1FAD1'],['o','1FAD2'],
+const WORKER = 'https://silent-rice-55b5.glastraaguila.workers.dev';
+const RAND_TERMS = [
+  'nature','flowers','people','fashion','animals','food','city',
+  'vintage','space','fire','music','art','dance','sport','travel',
+  'summer','winter','night','rainbow','ocean'
 ];
 
-function stickerUrl(s) {
-  return s[0] === 't'
-    ? SOURCES.twemoji(s[1])
-    : SOURCES.openmoji(s[1].toUpperCase());
+function seededShuffle(arr, seed) {
+  const a = [...arr]; let s = seed | 0;
+  for (let i = a.length - 1; i > 0; i--) {
+    s = (s * 1664525 + 1013904223) | 0;
+    [a[i], a[(s >>> 0) % (i + 1)]] = [a[(s >>> 0) % (i + 1)], a[i]];
+  }
+  return a;
 }
 
-function loadSvgUrl(url, tw, th) {
+async function fetchStickers(query) {
+  const offset = Math.floor(Math.random() * 200);
+  const term   = query || RAND_TERMS[Math.floor(Math.random() * RAND_TERMS.length)];
+  const url    = `${WORKER}/search?q=${encodeURIComponent(term)}&limit=${THUMB_COUNT}&offset=${offset}&rating=g`;
+  try {
+    const res  = await fetch(url);
+    const data = await res.json();
+    return data.data || [];
+  } catch(e) {
+    console.warn('Giphy Worker error:', e);
+    return [];
+  }
+}
+
+function loadStickerImage(url, tw, th) {
   return new Promise(resolve => {
     const img = new Image();
     img.crossOrigin = 'anonymous';
@@ -449,8 +427,7 @@ function loadSvgUrl(url, tw, th) {
       c.width   = tw; c.height = th;
       const ctx = c.getContext('2d');
       ctx.clearRect(0, 0, tw, th);
-      const pad = tw * 0.06;
-      ctx.drawImage(img, pad, pad, tw - pad*2, th - pad*2);
+      ctx.drawImage(img, 0, 0, tw, th);
       resolve(c);
     };
     img.onerror = () => resolve(null);
@@ -458,18 +435,10 @@ function loadSvgUrl(url, tw, th) {
   });
 }
 
-function seededShuffle(arr, seed) {
-  const a = [...arr]; let s = seed | 0;
-  for (let i = a.length - 1; i > 0; i--) {
-    s = (s * 1664525 + 1013904223) | 0;
-    const j = (s >>> 0) % (i + 1);
-    [a[i], a[j]] = [a[j], a[i]];
-  }
-  return a;
-}
-
 async function loadTray(query = '') {
   tray.innerHTML = '';
+
+  // Skeletons
   for (let i = 0; i < THUMB_COUNT; i++) {
     const tw = Math.round(THUMB_H * ASPECTS[i % ASPECTS.length]);
     const sk = document.createElement('div');
@@ -477,19 +446,26 @@ async function loadTray(query = '') {
     tray.appendChild(sk);
   }
 
-  const seed  = query
-    ? query.split('').reduce((a, c) => a + c.charCodeAt(0), 0) * 31
-    : Math.floor(Math.random() * 99999);
-  const picks = seededShuffle(STICKERS, seed).slice(0, THUMB_COUNT);
+  const stickers = await fetchStickers(query);
 
-  await Promise.all(picks.map(async (sticker, i) => {
+  await Promise.all(stickers.map(async (s, i) => {
+    const sk  = document.getElementById('sk' + i);
+    if (!sk) return;
     const tw  = Math.round(THUMB_H * ASPECTS[i % ASPECTS.length]);
     const th  = THUMB_H;
-    const src = await loadSvgUrl(stickerUrl(sticker), tw * 2, th * 2);
-    const sk  = document.getElementById('sk' + i);
-    if (src && sk?.isConnected) setThumb(sk, src, tw, th);
-    else if (sk?.isConnected) sk.remove();
+    // fixed_height_still = static PNG frame, transparent for stickers
+    const url = s.images?.fixed_height_still?.url
+             || s.images?.fixed_height?.url
+             || s.images?.downsized?.url;
+    if (!url) return;
+    const src = await loadStickerImage(url, tw, th);
+    if (src && sk.isConnected) setThumb(sk, src, tw, th);
+    else if (sk.isConnected) sk.remove();
   }));
+
+  // Remove unused skeletons
+  for (let i = stickers.length; i < THUMB_COUNT; i++)
+    document.getElementById('sk' + i)?.remove();
 }
 
 function setThumb(sk, src, tw, th) {
