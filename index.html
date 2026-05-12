@@ -379,68 +379,77 @@ function commitDrop() {
   const [ccx,ccy]=clientToCanvas(gr.left+gr.width/2,gr.top+gr.height/2);
   if (ccx<0||ccy<0||ccx>cvs.width||ccy>cvs.height) return;
   const [wx,wy]=canvasToWorld(ccx,ccy);
-  items.push({id:++idSeq,src:ghostSrc,w:ghostW,h:ghostH,wx,wy,rot:ghostRot,sc:1,z:++zTop});
+  items.push({id:++idSeq,src:ghostSrc,w:ghostW,h:ghostH,wx,wy,rot:ghostRot,sc:1,z:++zTop,flipX:false});
   undoStack.push(idSeq); updateUI(); redraw();
 }
 
 // ─────────────────────────────────────────────────────
-// IMAGE LOADING — OpenMoji via jsDelivr CDN
-// OpenMoji: free, open source emoji set, SVG format, transparent background.
-// CORS allowed from any domain. No API key, no rate limit for static files.
-// https://openmoji.org  —  License: CC BY-SA 4.0
+// IMAGE LOADING
+// Two sources, both CORS-safe, both transparent:
+// 1. Twemoji (Twitter emoji) — modern flat style, via jsDelivr
+// 2. OpenMoji — more expressive style, via jsDelivr
+// Both are SVG, transparent bg, free, no API key.
+// Flip: each item stores a flipX state, toggled on long-press.
 
-// Curated list of OpenMoji unicode codepoints — diverse objects, animals, nature, food, etc.
-const EMOJIS = [
-  // Nature & plants
-  '1F335','1F337','1F338','1F339','1F33A','1F33B','1F33C','1F33D','1F33E','1F33F',
-  '1F340','1F341','1F342','1F343','1F344','1F490','1F4AE','2618',
+const SOURCES = {
+  twemoji: (code) => `https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/svg/${code}.svg`,
+  openmoji: (code) => `https://cdn.jsdelivr.net/gh/hfg-gmuend/openmoji@15.0.0/color/svg/${code}.svg`,
+};
+
+// Curated list: [source, code] pairs — diverse, mature aesthetic
+const STICKERS = [
+  // Nature
+  ['t','1f335'],['t','1f337'],['t','1f338'],['t','1f339'],['t','1f33a'],
+  ['t','1f33b'],['t','1f332'],['t','1f333'],['t','1f334'],['t','1f341'],
+  ['t','1f342'],['t','1f343'],['t','1f344'],['t','1f490'],['t','1f30a'],
+  ['t','1f30b'],['t','1f30c'],['t','1f304'],['t','1f305'],['t','2600'],
+  ['t','1f319'],['t','1f315'],['t','2b50'],['t','26a1'],['t','2744'],
+  ['t','1f308'],['t','1f4a7'],['t','1f525'],
   // Animals
-  '1F408','1F409','1F40A','1F40B','1F40C','1F40D','1F40E','1F411','1F412',
-  '1F413','1F414','1F415','1F416','1F417','1F418','1F419','1F41A','1F41B',
-  '1F41C','1F41D','1F41E','1F41F','1F420','1F421','1F422','1F423','1F424',
-  '1F425','1F426','1F427','1F428','1F429','1F42A','1F42B','1F42C','1F42D',
-  '1F42E','1F42F','1F430','1F431','1F432','1F433','1F434','1F435','1F436',
-  '1F437','1F438','1F439','1F43A','1F43B','1F43C','1F43D','1F43E',
-  '1F98A','1F98B','1F98C','1F98D','1F98E','1F98F','1F990','1F991',
-  '1F992','1F993','1F994','1F995','1F996','1F997',
-  // Food & drink
-  '1F347','1F348','1F349','1F34A','1F34B','1F34C','1F34D','1F34E','1F34F',
-  '1F350','1F351','1F352','1F353','1F354','1F355','1F356','1F357','1F358',
-  '1F359','1F35A','1F35B','1F35C','1F35D','1F35E','1F35F','1F360','1F361',
-  '1F362','1F363','1F364','1F365','1F366','1F367','1F368','1F369','1F36A',
-  '1F370','1F371','1F372','1F373','1F374','1F375','1F376','1F377','1F378',
-  '1F379','1F37A','1F37B','1F37C','1F382','1F383',
-  // Objects & things
-  '1F4A1','1F4A3','1F4A5','1F4AB','1F4AF',
-  '1F680','1F681','1F682','1F683','1F684','1F685','1F686','1F687','1F688',
-  '1F689','1F68A','1F68B','1F68C','1F68D','1F68E','1F68F','1F690','1F691',
-  '1F6A2','1F6A4','1F6A5','1F6A7','1F6A8','1F6B2','1F6F4','1F6F5','1F6F8',
-  '2702','2708','26BD','26BE','1F3B8','1F3BA','1F3BB','1F3BC','1F3A8',
-  '1F451','1F452','1F453','1F454','1F455','1F456','1F457','1F458','1F459',
-  '1F45A','1F45B','1F45C','1F45D','1F45E','1F45F','1F460','1F461','1F462',
-  // Symbols & misc
-  '2764','1F495','1F496','1F497','1F498','1F499','1F49A','1F49B','1F49C',
-  '2B50','1F31F','1F4AB','26A1','1F525','1F4A7','2744','1F308','1F319',
-  '1F315','1F311',
+  ['t','1f408'],['t','1f415'],['t','1f98a'],['t','1f431'],['t','1f436'],
+  ['t','1f42c'],['t','1f98b'],['t','1f426'],['t','1f985'],['t','1f986'],
+  ['t','1f987'],['t','1f992'],['t','1f993'],['t','1f994'],['t','1f995'],
+  ['t','1f996'],['t','1f997'],['t','1f419'],['t','1f41f'],['t','1f422'],
+  ['t','1f98d'],['t','1f43c'],['t','1f98e'],
+  // Food
+  ['t','1f347'],['t','1f349'],['t','1f34b'],['t','1f34c'],['t','1f353'],
+  ['t','1f354'],['t','1f355'],['t','1f370'],['t','1f382'],['t','1f377'],
+  ['t','1f37b'],['t','2615'],['t','1f375'],['t','1f366'],['t','1f367'],
+  // Objects
+  ['t','1f4f8'],['t','1f3a8'],['t','1f3b8'],['t','1f3ba'],['t','1f3b9'],
+  ['t','1f4da'],['t','270f'],['t','1f4f0'],['t','1f4e6'],['t','1f381'],
+  ['t','1f380'],['t','1f484'],['t','1f451'],['t','1f460'],['t','1f9f2'],
+  ['t','1f9f3'],['t','1f9f4'],['t','1f9f5'],['t','1f9f6'],['t','1f9ff'],
+  ['t','1fa84'],['t','1f52e'],['t','1f9ea'],['t','1f9eb'],['t','1f9ec'],
+  // Travel & places
+  ['t','1f3d4'],['t','1f3d5'],['t','1f3d6'],['t','1f3d7'],['t','1f3db'],
+  ['t','1f3dc'],['t','26fa'],['t','1f6f8'],['t','2708'],['t','1f680'],
+  ['t','1f6f4'],['t','1f6b2'],['t','26f5'],['t','1f697'],
+  // Symbols & art
+  ['t','2764'],['t','1f9e1'],['t','1f49b'],['t','1f49a'],['t','1f499'],
+  ['t','1f49c'],['t','1f5a4'],['t','1f4ab'],['t','2728'],['t','1f4af'],
+  // OpenMoji extras (more expressive)
+  ['o','1F9B8'],['o','1F9B9'],['o','1F9CC'],['o','1FAB6'],['o','1FAB7'],
+  ['o','1FAB8'],['o','1FAB9'],['o','1FABA'],['o','1F9A9'],['o','1F9A6'],
+  ['o','1F9A7'],['o','1F9A8'],['o','1FAD0'],['o','1FAD1'],['o','1FAD2'],
 ];
 
-// jsDelivr CDN for OpenMoji SVGs — CORS enabled
-function emojiUrl(code) {
-  return `https://cdn.jsdelivr.net/gh/hfg-gmuend/openmoji@15.0.0/color/svg/${code}.svg`;
+function stickerUrl(s) {
+  return s[0] === 't'
+    ? SOURCES.twemoji(s[1])
+    : SOURCES.openmoji(s[1].toUpperCase());
 }
 
 function loadSvgUrl(url, tw, th) {
   return new Promise(resolve => {
     const img = new Image();
-    // jsDelivr supports CORS — crossOrigin needed to draw to canvas
     img.crossOrigin = 'anonymous';
     img.onload = () => {
-      const c = document.createElement('canvas');
-      c.width = tw; c.height = th;
+      const c   = document.createElement('canvas');
+      c.width   = tw; c.height = th;
       const ctx = c.getContext('2d');
       ctx.clearRect(0, 0, tw, th);
-      // Center with padding
-      const pad = tw * 0.08;
+      const pad = tw * 0.06;
       ctx.drawImage(img, pad, pad, tw - pad*2, th - pad*2);
       resolve(c);
     };
@@ -449,13 +458,11 @@ function loadSvgUrl(url, tw, th) {
   });
 }
 
-// Shuffle array with seed
 function seededShuffle(arr, seed) {
-  const a = [...arr];
-  let s = seed | 0;
+  const a = [...arr]; let s = seed | 0;
   for (let i = a.length - 1; i > 0; i--) {
     s = (s * 1664525 + 1013904223) | 0;
-    const j = ((s >>> 0) % (i + 1));
+    const j = (s >>> 0) % (i + 1);
     [a[i], a[j]] = [a[j], a[i]];
   }
   return a;
@@ -463,8 +470,6 @@ function seededShuffle(arr, seed) {
 
 async function loadTray(query = '') {
   tray.innerHTML = '';
-
-  // Skeletons
   for (let i = 0; i < THUMB_COUNT; i++) {
     const tw = Math.round(THUMB_H * ASPECTS[i % ASPECTS.length]);
     const sk = document.createElement('div');
@@ -472,21 +477,18 @@ async function loadTray(query = '') {
     tray.appendChild(sk);
   }
 
-  // Pick THUMB_COUNT emojis, varied by query or random
   const seed  = query
     ? query.split('').reduce((a, c) => a + c.charCodeAt(0), 0) * 31
     : Math.floor(Math.random() * 99999);
-  const picks = seededShuffle(EMOJIS, seed).slice(0, THUMB_COUNT);
+  const picks = seededShuffle(STICKERS, seed).slice(0, THUMB_COUNT);
 
-  // Load in parallel — each updates its own skeleton
-  await Promise.all(picks.map(async (code, i) => {
+  await Promise.all(picks.map(async (sticker, i) => {
     const tw  = Math.round(THUMB_H * ASPECTS[i % ASPECTS.length]);
     const th  = THUMB_H;
-    const url = emojiUrl(code);
-    const src = await loadSvgUrl(url, tw * 2, th * 2);
+    const src = await loadSvgUrl(stickerUrl(sticker), tw * 2, th * 2);
     const sk  = document.getElementById('sk' + i);
     if (src && sk?.isConnected) setThumb(sk, src, tw, th);
-    else if (sk?.isConnected) sk.remove(); // hide if failed
+    else if (sk?.isConnected) sk.remove();
   }));
 }
 
