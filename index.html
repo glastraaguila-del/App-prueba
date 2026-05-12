@@ -161,6 +161,8 @@ opacity: 0.88;
 
 <div id="ghost"><canvas></canvas></div>
 
+<script src="https://cdn.jsdelivr.net/npm/gifuct-js@2.1.2/dist/gifuct-js.min.js"></script>
+
 <script>
 'use strict';
 
@@ -271,7 +273,9 @@ function redraw() {
     ctx.shadowBlur    = 18;
     ctx.shadowOffsetX = 2;
     ctx.shadowOffsetY = 7;
-    ctx.drawImage(item.src, -item.w / 2, -item.h / 2, item.w, item.h);
+    // Use live animated canvas if available, otherwise static src
+    const drawSrc = item.animCanvas || item.src;
+    ctx.drawImage(drawSrc, -item.w / 2, -item.h / 2, item.w, item.h);
     ctx.restore();
   }
 }
@@ -489,10 +493,25 @@ cvs.addEventListener('wheel', e => {
 // Ghost follows finger. On drop, reads ghost.getBoundingClientRect()
 // for the exact screen position — no event coordinate issues.
 // ─────────────────────────────────────────────────────
-let ghostSrc  = null;
-let ghostW    = 0;
-let ghostH    = 0;
-let ghostRot  = 0;
+let ghostSrc        = null;
+let ghostW          = 0;
+let ghostH          = 0;
+let ghostRot        = 0;
+let ghostAnimCanvas = null;
+
+// Animation loop for animated GIF items on canvas
+let animLoopId = null;
+function startAnimLoop() {
+  if (animLoopId) return; // already running
+  function loop() {
+    redraw();
+    animLoopId = requestAnimationFrame(loop);
+  }
+  animLoopId = requestAnimationFrame(loop);
+}
+function stopAnimLoop() {
+  if (animLoopId) { cancelAnimationFrame(animLoopId); animLoopId = null; }
+}
 
 // Touch drag from tray
 let trayTouchId     = null;
@@ -571,7 +590,8 @@ document.addEventListener('mouseup', e => {
 });
 
 function startGhost(thumb, cx, cy) {
-  ghostSrc = thumb._src;
+  ghostSrc        = thumb._src;  // snapshot or static
+  ghostAnimCanvas = thumb._animCanvas || null;
   ghostW   = Math.round(thumb._w * CFG.ITEM_SCALE);
   ghostH   = Math.round(thumb._h * CFG.ITEM_SCALE);
   ghostRot = (Math.random() - 0.5) * 20;
@@ -599,7 +619,11 @@ function commitDrop() {
   if (ccx < 0 || ccy < 0 || ccx > cvs.width || ccy > cvs.height) return;
 
   const [wx, wy] = canvasToWorld(ccx, ccy);
-  items.push({ id: ++idSeq, src: ghostSrc, w: ghostW, h: ghostH, wx, wy, rot: ghostRot, sc: 1, z: ++zTop });
+  // If ghost came from an animated thumb, keep the animation
+  const animC = ghostAnimCanvas;
+  items.push({ id: ++idSeq, src: ghostSrc, w: ghostW, h: ghostH, wx, wy, rot: ghostRot, sc: 1, z: ++zTop, animCanvas: animC || null });
+  // Animated items need continuous redraw
+  if (animC) startAnimLoop();
   undoStack.push(idSeq);
   updateUI();
   redraw();
@@ -688,7 +712,110 @@ function showThumb(sk, src, tw, th, isTransparent) {
   c.getContext('2d').drawImage(src, 0, 0, tw, th);
 }
 
+// ─────────────────────────────────────────────────────
+// ANIMATED GIF SUPPORT
+// Uses gifuct-js to decode GIF frames and animates them
+// on a canvas element — works with transparent GIFs.
+// ─────────────────────────────────────────────────────
+
+// Parse GIF from URL into frames array
+async function fetchGifFrames(url) {
+  try {
+    const res  = await fetch(url);
+    const buf  = await res.arrayBuffer();
+    const gif  = parseGIF(buf);
+    const frames = decompressFrames(gif, true);
+    return frames;
+  } catch(e) { return null; }
+}
+
+// Create an animated canvas element from GIF frames
+function makeAnimatedCanvas(frames, tw, th) {
+  const c   = document.createElement('canvas');
+  c.width   = tw; c.height = th;
+  const ctx = c.getContext('2d');
+
+  // Offscreen for compositing
+  const off    = document.createElement('canvas');
+  off.width    = tw; off.height = th;
+  const offCtx = off.getContext('2d');
+
+  let frame = 0;
+  let patch  = null; // current frame ImageData
+
+  function drawFrame() {
+    const f   = frames[frame];
+    const fw  = f.dims.width, fh = f.dims.height;
+    const fx  = f.dims.left,  fy = f.dims.top;
+
+    // Handle disposal
+    if (f.disposalType === 2) offCtx.clearRect(fx, fy, fw, fh);
+
+    // Draw patch
+    if (!patch || patch.width !== fw || patch.height !== fh)
+      patch = offCtx.createImageData(fw, fh);
+    patch.data.set(f.patch);
+    offCtx.putImageData(patch, fx, fy);
+
+    // Scale to thumb size
+    ctx.clearRect(0, 0, tw, th);
+    ctx.drawImage(off, 0, 0, off.width, off.height, 0, 0, tw, th);
+
+    frame = (frame + 1) % frames.length;
+    const delay = Math.max(20, (f.delay || 10) * 10);
+    c._timer = setTimeout(drawFrame, delay);
+  }
+
+  drawFrame();
+  c._animated = true;
+  c._frames   = frames; // keep reference
+  return c;
+}
+
+// Load GIF URL as animated thumb — falls back to static if parse fails
+async function loadAnimatedThumb(sk, url, tw, th) {
+  const frames = await fetchGifFrames(url);
+
+  if (frames && frames.length > 1) {
+    // Animated
+    const animCanvas = makeAnimatedCanvas(frames, tw, th);
+    animCanvas.style.cssText = 'display:block;height:100%;width:auto;pointer-events:none;';
+
+    sk.classList.remove('loading');
+    sk.classList.add('transparent');
+    sk.style.width  = tw + 'px';
+    sk.style.height = th + 'px';
+    sk._w = tw; sk._h = th;
+    sk.style.transform = `rotate(${(Math.random() - 0.5) * 14}deg)`;
+    sk.style.marginTop  = (Math.random() - 0.5) * 16 + 'px';
+
+    // _src for canvas drop = current frame snapshot
+    // We update it each frame so dragging always gets current frame
+    sk._animCanvas = animCanvas;
+    Object.defineProperty(sk, '_src', {
+      get() {
+        const snap = document.createElement('canvas');
+        snap.width = tw; snap.height = th;
+        snap.getContext('2d').drawImage(animCanvas, 0, 0);
+        return snap;
+      },
+      configurable: true,
+    });
+
+    const existing = sk.querySelector('canvas');
+    if (existing) existing.remove();
+    sk.appendChild(animCanvas);
+
+  } else {
+    // Static fallback
+    const src = await urlToCanvas(url, tw, th);
+    if (src && sk.isConnected) showThumb(sk, src, tw, th, true);
+  }
+}
+
 async function loadTray(query) {
+  // Stop any running GIF animations
+  tray.querySelectorAll('canvas[data-animated]').forEach(c => clearTimeout(c._timer));
   tray.innerHTML = '';
   query ? await loadPexels(query) : await loadGiphy();
 }
@@ -700,9 +827,9 @@ async function loadGiphy() {
 
   let stickers = [];
   try {
-    const offset = Math.floor(Math.random() * 200);
+    const offset = Math.floor(Math.random() * 500);
     const res  = await fetch(
-      `https://api.giphy.com/v1/stickers/trending?api_key=${CFG.GIPHY_KEY}&limit=${count}&offset=${offset}&rating=g`
+      `https://api.giphy.com/v1/stickers/trending?api_key=${CFG.GIPHY_KEY}&limit=${count}&offset=${offset}&rating=g&fmt=json`
     );
     stickers = (await res.json()).data || [];
   } catch(e) { console.warn('Giphy error:', e); }
@@ -712,10 +839,12 @@ async function loadGiphy() {
     if (!sk) return;
     const tw  = Math.round(CFG.THUMB_H * CFG.ASPECTS[i % CFG.ASPECTS.length]);
     const th  = CFG.THUMB_H;
-    const url = s.images?.fixed_height_small?.url || s.images?.fixed_height?.url;
-    if (!url) return;
-    const src = await urlToCanvas(url, tw, th);
-    if (src && sk.isConnected) showThumb(sk, src, tw, th, true);
+    // Prefer animated GIF URL — stickers always have transparent bg
+    const gifUrl = s.images?.fixed_height?.url
+                || s.images?.fixed_height_small?.url;
+    if (!gifUrl) return;
+    // Load as animated GIF
+    await loadAnimatedThumb(sk, gifUrl, tw, th);
   }));
 
   for (let i = stickers.length; i < count; i++)
