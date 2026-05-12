@@ -561,7 +561,7 @@ cvs.addEventListener('wheel', e => {
 // ═══════════════════════════════════════════════════════
 const ITEM_MULT = 1.8;
 
-let ghostSrc = null, ghostW = 0, ghostH = 0, ghostRot = 0, ghostClip = null;
+let ghostSrc = null, ghostW = 0, ghostH = 0, ghostRot = 0;
 let trayDragTid = null, trayDragStartY = 0, trayDragStartX = 0;
 let trayDragActive = false, trayScrolling = false;
 
@@ -595,7 +595,6 @@ trayEl.addEventListener('touchmove', e => {
       if (!thumb?._src) return;
 
       ghostSrc  = thumb._src;
-      ghostClip = thumb._clip || null;
       ghostW   = Math.round(thumb._w * ITEM_MULT);
       ghostH   = Math.round(thumb._h * ITEM_MULT);
       ghostRot = (Math.random() - 0.5) * 20;
@@ -643,13 +642,10 @@ trayEl.addEventListener('touchend', e => {
   // Only place if the ghost center landed over the canvas
   if (ccx < 0 || ccy < 0 || ccx > cvs.width || ccy > cvs.height) return;
 
-  const newId = ++idSeq;
-  items.push({ id: newId, src: ghostSrc, w: ghostW, h: ghostH, wx, wy, rot: ghostRot, sc: 1, z: ++zTop, clip: ghostClip, processing: true });
-  undoStack.push(newId);
+  items.push({ id: ++idSeq, src: ghostSrc, w: ghostW, h: ghostH, wx, wy, rot: ghostRot, sc: 1, z: ++zTop });
+  undoStack.push(idSeq);
   updateUI();
   draw();
-  // Remove background asynchronously
-  removeBackground(newId, ghostSrc, ghostW, ghostH);
 }, { passive: true });
 
 // Mouse drop from tray
@@ -659,7 +655,6 @@ trayEl.addEventListener('mousedown', e => {
   if (!thumb?._src) return;
   e.preventDefault();
   ghostSrc  = thumb._src;
-  ghostClip = thumb._clip || null;
   ghostW   = Math.round(thumb._w * ITEM_MULT);
   ghostH   = Math.round(thumb._h * ITEM_MULT);
   ghostRot = (Math.random() - 0.5) * 20;
@@ -690,53 +685,54 @@ document.addEventListener('mouseup', e => {
   const [ccx, ccy] = clientToCanvas(screenCX, screenCY);
   const [wx,  wy]  = canvasToWorld(ccx, ccy);
   if (ccx < 0 || ccy < 0 || ccx > cvs.width || ccy > cvs.height) return;
-  const newId = ++idSeq;
-  items.push({ id: newId, src: ghostSrc, w: ghostW, h: ghostH, wx, wy, rot: ghostRot, sc: 1, z: ++zTop, clip: ghostClip, processing: true });
-  undoStack.push(newId);
+  items.push({ id: ++idSeq, src: ghostSrc, w: ghostW, h: ghostH, wx, wy, rot: ghostRot, sc: 1, z: ++zTop });
+  undoStack.push(idSeq);
   updateUI();
   draw();
-  removeBackground(newId, ghostSrc, ghostW, ghostH);
 });
 
 // ═══════════════════════════════════════════════════════
-// IMAGE LOADING — Pexels API + irregular cutout shapes
+// KEYS & CONFIG
 // ═══════════════════════════════════════════════════════
-const PEXELS_KEY   = 'uW3ruQAHsj1M7Rhfw3IDRuDU40jvHyNCGk3fK5zto4FirA3ux4xByn5Y';
-const ASPECTS      = [0.8,1.2,1.0,0.75,1.35,0.9,1.1,0.85,1.25,0.95,0.7,1.3];
-const TRAY_THUMB_H = 100;
-const TRAY_COUNT   = 20;
+const PEXELS_KEY    = 'uW3ruQAHsj1M7Rhfw3IDRuDU40jvHyNCGk3fK5zto4FirA3ux4xByn5Y';
+const REMOVEBG_KEY  = 'V6P4yToSRoNDfzXTVQmg9VRf';
+const TRAY_THUMB_H  = 110;
+const TRAY_COUNT    = 16;
+const ASPECTS       = [0.85,1.1,0.75,1.25,0.9,1.0,0.8,1.15,0.7,1.3,0.95,1.05];
 
-// Organic cutout shapes — SVG paths that look hand-cut
-// Each is a normalized path string (0-1 coords), applied via canvas clip
-const CUTOUT_SHAPES = [
-  // blob 1 — rounded organic
-  'M.08,.18 C.02,.08 .12,0 .25,.03 C.42,.06 .58,0 .72,.04 C.86,.08 1,.15 .97,.32 C.94,.48 1,.62 .96,.76 C.92,.9 .82,1 .65,.97 C.48,.94 .32,1 .18,.95 C.04,.9 0,.78 .03,.62 C.06,.46 0,.32 .08,.18 Z',
-  // blob 2 — wide landscape
-  'M.05,.25 C.0,.12 .1,.02 .28,.05 C.45,.08 .6,.0 .75,.04 C.9,.08 1,.18 .98,.35 C.96,.52 1,.68 .94,.8 C.88,.92 .72,1 .55,.96 C.38,.92 .22,1 .1,.92 C-.02,.84 .0,.72 .04,.55 C.08,.38 .1,.38 .05,.25 Z',
-  // blob 3 — portrait tall
-  'M.15,.05 C.28,-.02 .45,.02 .58,.08 C.72,.14 .88,.1 .95,.25 C1.02,.4 .98,.58 .92,.72 C.86,.86 .9,.96 .75,.98 C.6,1 .42,1 .28,.95 C.14,.9 .02,.82 .04,.65 C.06,.48 0,.32 .08,.18 C.16,.04 .02,.12 .15,.05 Z',
-  // torn left edge
-  'M.12,.02 C.28,.0 .5,.04 .7,.02 C.88,0 1,.12 .98,.3 C.96,.48 1,.65 .97,.8 C.94,.95 .8,1 .62,.97 C.44,.94 .25,1 .1,.94 C-.04,.88 .02,.72 .06,.55 C.1,.38 -.02,.22 .12,.02 Z',
-  // irregular right edge
-  'M.05,.15 C.02,.05 .15,0 .32,.03 C.5,.06 .68,.0 .82,.06 C.96,.12 1,.28 .95,.45 C.9,.62 1,.75 .92,.88 C.84,1 .65,.98 .45,.95 C.25,.92 .08,1 .02,.85 C-.04,.7 .08,.55 .1,.38 C.12,.21 .08,.25 .05,.15 Z',
-  // round-ish
-  'M.5,.02 C.68,.0 .85,.08 .95,.22 C1.05,.36 1,.55 .95,.7 C.9,.85 .78,.98 .6,1 C.42,1.02 .25,.95 .12,.82 C-.01,.69 0,.5 .05,.34 C.1,.18 .22,.06 .5,.02 Z',
-  // landscape wide torn
-  'M.02,.3 C.0,.16 .12,.06 .28,.1 C.44,.14 .58,.05 .74,.08 C.9,.11 1,.22 .97,.38 C.94,.54 1,.68 .96,.82 C.92,.96 .78,1 .6,.97 C.42,.94 .24,1 .1,.9 C-.04,.8 .04,.65 .08,.5 C.12,.35 .04,.44 .02,.3 Z',
-  // abstract splash
-  'M.2,.02 C.36,-.04 .55,.04 .7,.1 C.85,.16 1,.28 .98,.46 C.96,.64 1,.8 .88,.92 C.76,1.04 .55,1 .36,.96 C.17,.92 .0,.82 .02,.64 C.04,.46 -.04,.28 .1,.15 C.24,.02 .04,.08 .2,.02 Z',
-];
-
-function getClip(i) {
-  return CUTOUT_SHAPES[i % CUTOUT_SHAPES.length];
+// ── Remove background via remove.bg ──────────────────
+// Returns a canvas with transparent background, or null on failure
+async function removeBg(srcCanvas) {
+  const blob = await new Promise(res => srcCanvas.toBlob(res, 'image/png'));
+  const fd   = new FormData();
+  fd.append('image_file', blob, 'image.png');
+  fd.append('size', 'auto');
+  try {
+    const res = await fetch('https://api.remove.bg/v1.0/removebg', {
+      method: 'POST',
+      headers: { 'X-Api-Key': REMOVEBG_KEY },
+      body: fd,
+    });
+    if (!res.ok) return null;
+    const rb  = await res.blob();
+    const url = URL.createObjectURL(rb);
+    return new Promise(resolve => {
+      const img = new Image();
+      img.onload = () => {
+        const c   = document.createElement('canvas');
+        c.width   = srcCanvas.width; c.height = srcCanvas.height;
+        c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+        URL.revokeObjectURL(url);
+        resolve(c);
+      };
+      img.onerror = () => { URL.revokeObjectURL(url); resolve(null); };
+      img.src = url;
+    });
+  } catch { return null; }
 }
 
-function getClip(i) {
-  return CUTOUT_CLIPS[i % CUTOUT_CLIPS.length];
-}
-
-// Load image URL into canvas with clip-path applied
-function urlToCanvas(url, tw, th, clip) {
+// ── Load image URL into canvas ────────────────────────
+function urlToCanvas(url, tw, th) {
   return new Promise(res => {
     const img = new Image();
     img.crossOrigin = 'anonymous';
@@ -744,18 +740,8 @@ function urlToCanvas(url, tw, th, clip) {
       const c   = document.createElement('canvas');
       c.width   = tw; c.height = th;
       const ctx = c.getContext('2d');
-
-            // Apply organic clip shape
-      if (clip) {
-        applyOrgClip(ctx, clip, tw, th);
-        ctx.clip();
-      }
-
-      // cover crop
-      const s  = Math.max(tw / img.naturalWidth, th / img.naturalHeight);
-      const sx = (img.naturalWidth  - tw/s) / 2;
-      const sy = (img.naturalHeight - th/s) / 2;
-      ctx.drawImage(img, sx, sy, tw/s, th/s, 0, 0, tw, th);
+      const s   = Math.max(tw/img.naturalWidth, th/img.naturalHeight);
+      ctx.drawImage(img, (img.naturalWidth-tw/s)/2, (img.naturalHeight-th/s)/2, tw/s, th/s, 0, 0, tw, th);
       res(c);
     };
     img.onerror = () => res(null);
@@ -763,164 +749,115 @@ function urlToCanvas(url, tw, th, clip) {
   });
 }
 
-// Gradient fallback with clip
-function generateFallback(seed, tw, th, clip) {
-  const c   = document.createElement('canvas');
-  c.width   = tw; c.height = th;
+// ── Gradient fallback ─────────────────────────────────
+function makeFallback(seed, tw, th) {
+  const c = document.createElement('canvas'); c.width=tw; c.height=th;
   const ctx = c.getContext('2d');
-  let s = seed;
-  const rng = () => { s=(s*1664525+1013904223)&0xffffffff; return (s>>>0)/0xffffffff; };
-  const h1  = rng()*360, h2 = (h1+80+rng()*120)%360;
-
-  if (clip) { applyOrgClip(ctx, clip, tw, th); ctx.clip(); }
-
+  let s = seed|0;
+  const r = () => { s=(s*1664525+1013904223)&0xffffffff; return (s>>>0)/0xffffffff; };
   const g = ctx.createLinearGradient(0,0,tw,th);
-  g.addColorStop(0, `hsl(${h1},45%,42%)`);
-  g.addColorStop(1, `hsl(${h2},55%,58%)`);
-  ctx.fillStyle = g;
-  ctx.fillRect(0,0,tw,th);
+  g.addColorStop(0,`hsl(${r()*360},45%,42%)`);
+  g.addColorStop(1,`hsl(${r()*360},55%,58%)`);
+  ctx.fillStyle=g; ctx.fillRect(0,0,tw,th);
   return c;
+}
+
+// ── Draw thumb canvas into the visible small canvas ───
+function renderThumb(sk) {
+  const c = sk.querySelector('canvas');
+  if (!c) return;
+  const ctx = c.getContext('2d');
+  ctx.clearRect(0, 0, c.width, c.height);
+  if (sk._src) ctx.drawImage(sk._src, 0, 0, c.width, c.height);
+}
+
+// ── Skeleton helper ───────────────────────────────────
+function makeSkeleton(i, tw) {
+  const sk = document.createElement('div');
+  sk.className = 'thumb loading'; sk.id = 'sk'+i;
+  sk.style.width = tw+'px';
+  trayEl.appendChild(sk);
+  return sk;
+}
+
+// ── Upgrade skeleton to loaded thumb ─────────────────
+function activateThumb(sk, src, tw, th) {
+  sk.classList.remove('loading');
+  sk.style.width  = tw+'px'; sk.style.height = th+'px';
+  sk._src = src; sk._w = tw; sk._h = th;
+  sk._clip = null; // no clip — transparency from remove.bg
+  sk.style.transform = `rotate(${(Math.random()-.5)*14}deg)`;
+  sk.style.marginTop  = (Math.random()-.5)*16+'px';
+
+  // background checkerboard so cutout is visible in tray
+  sk.style.background = 'repeating-conic-gradient(#ddd 0% 25%, #eee 0% 50%) 0 0 / 10px 10px';
+
+  let c = sk.querySelector('canvas');
+  if (!c) {
+    c = document.createElement('canvas');
+    c.style.cssText = 'display:block;height:100%;width:auto;pointer-events:none;';
+    sk.appendChild(c);
+  }
+  c.width = tw; c.height = th;
+  renderThumb(sk);
 }
 
 // ═══════════════════════════════════════════════════════
 // TRAY POPULATION
 // ═══════════════════════════════════════════════════════
-let lastQuery = '';
-
 async function loadTray(query) {
   trayEl.innerHTML = '';
-  lastQuery = query;
 
-  // Skeletons
-  for (let i = 0; i < TRAY_COUNT; i++) {
-    const sk = document.createElement('div');
-    sk.className = 'thumb loading'; sk.id = 'sk'+i;
-    sk.style.width = '80px';
-    trayEl.appendChild(sk);
-  }
-
-  // Fetch from Pexels
+  // Fetch photos from Pexels
   let photos = [];
   try {
-    const q   = query || 'nature texture abstract';
-    const url = `https://api.pexels.com/v1/search?query=${encodeURIComponent(q)}&per_page=${TRAY_COUNT}&orientation=square`;
+    const q   = query || 'people fashion portrait nature';
+    const url = `https://api.pexels.com/v1/search?query=${encodeURIComponent(q)}&per_page=${TRAY_COUNT}&orientation=portrait`;
     const res = await fetch(url, { headers: { Authorization: PEXELS_KEY } });
-    const data = await res.json();
-    photos = data.photos || [];
-  } catch(e) {
-    console.warn('Pexels failed:', e);
-  }
+    const d   = await res.json();
+    photos = d.photos || [];
+  } catch(e) {}
 
-  // If no results, try curated
   if (!photos.length) {
     try {
-      const res  = await fetch(`https://api.pexels.com/v1/curated?per_page=${TRAY_COUNT}`, {
-        headers: { Authorization: PEXELS_KEY }
-      });
-      const data = await res.json();
-      photos = data.photos || [];
+      const res = await fetch(`https://api.pexels.com/v1/curated?per_page=${TRAY_COUNT}`, { headers: { Authorization: PEXELS_KEY } });
+      const d   = await res.json();
+      photos = d.photos || [];
     } catch(e) {}
   }
 
-  await Promise.all(photos.map(async (photo, i) => {
-    const ar   = ASPECTS[i % ASPECTS.length];
-    const tw   = Math.round(TRAY_THUMB_H * ar);
-    const th   = TRAY_THUMB_H;
-    const clip = getClip(i);
+  // Create skeletons
+  const thumbMeta = photos.map((_, i) => {
+    const ar = ASPECTS[i % ASPECTS.length];
+    const th = TRAY_THUMB_H;
+    const tw = Math.round(th * ar);
+    makeSkeleton(i, tw);
+    return { tw, th, i };
+  });
 
-    // Use medium size for speed
-    const imgUrl = photo.src?.medium || photo.src?.small;
-    let src = imgUrl ? await urlToCanvas(imgUrl, tw*2, th*2, clip) : null;
-    if (!src) src = generateFallback(photo.id || i, tw*2, th*2, clip);
+  // Load full images + remove.bg in parallel, update tray as each finishes
+  thumbMeta.forEach(async ({ tw, th, i }) => {
+    const photo  = photos[i];
+    const imgUrl = photo?.src?.medium || photo?.src?.small;
+    if (!imgUrl) return;
+
+    // Step 1: load original image quickly
+    let src = await urlToCanvas(imgUrl, tw*2, th*2);
+    if (!src) src = makeFallback(photo?.id || i, tw*2, th*2);
 
     const sk = document.getElementById('sk'+i);
     if (!sk) return;
 
-    sk.classList.remove('loading');
-    sk.style.width  = tw+'px'; sk.style.height = th+'px';
-    // Store at 2x for retina
-    sk._src  = src; sk._w = tw*2; sk._h = th*2;
-    sk._clip = clip;
-    sk.style.transform = `rotate(${(Math.random()-.5)*14}deg)`;
-    sk.style.marginTop  = (Math.random()-.5)*16+'px';
+    // Show original first so tray isn't empty
+    activateThumb(sk, src, tw, th);
 
-    const c = document.createElement('canvas');
-    c.width = tw; c.height = th;
-    c.getContext('2d').drawImage(src, 0, 0, tw, th);
-    c.style.cssText = 'display:block;height:100%;width:auto;pointer-events:none;';
-    sk.appendChild(c);
-  }));
-
-  // Remove unused skeletons
-  for (let i = photos.length; i < TRAY_COUNT; i++) {
-    document.getElementById('sk'+i)?.remove();
-  }
-}
-
-// ═══════════════════════════════════════════════════════
-// REMOVE.BG INTEGRATION
-// ═══════════════════════════════════════════════════════
-const REMOVEBG_KEY = 'V6P4yToSRoNDfzXTVQmg9VRf';
-
-async function removeBackground(itemId, srcCanvas, w, h) {
-  const item = items.find(p => p.id === itemId);
-  if (!item) return;
-
-  try {
-    // Convert canvas to blob
-    const blob = await new Promise(res => srcCanvas.toBlob(res, 'image/png'));
-
-    const formData = new FormData();
-    formData.append('image_file', blob, 'image.png');
-    formData.append('size', 'auto');
-
-    const res = await fetch('https://api.remove.bg/v1.0/removebg', {
-      method: 'POST',
-      headers: { 'X-Api-Key': REMOVEBG_KEY },
-      body: formData,
-    });
-
-    if (!res.ok) {
-      console.warn('remove.bg error:', res.status);
-      item.processing = false;
-      draw();
-      return;
+    // Step 2: remove background (async, updates thumb when done)
+    const cutout = await removeBg(src);
+    if (cutout && sk.isConnected) {
+      sk._src = cutout;
+      renderThumb(sk);
     }
-
-    const resultBlob = await res.blob();
-    const url = URL.createObjectURL(resultBlob);
-
-    await new Promise(resolve => {
-      const img = new Image();
-      img.onload = () => {
-        const c = document.createElement('canvas');
-        c.width = w; c.height = h;
-        const ctx = c.getContext('2d');
-        // cover crop
-        const s  = Math.max(w / img.naturalWidth, h / img.naturalHeight);
-        const sx = (img.naturalWidth  - w/s) / 2;
-        const sy = (img.naturalHeight - h/s) / 2;
-        ctx.drawImage(img, sx, sy, w/s, h/s, 0, 0, w, h);
-        URL.revokeObjectURL(url);
-
-        const it = items.find(p => p.id === itemId);
-        if (it) {
-          it.src = c;
-          it.clip = null; // no clip needed — background is transparent
-          it.processing = false;
-        }
-        draw();
-        resolve();
-      };
-      img.onerror = () => { URL.revokeObjectURL(url); resolve(); };
-      img.src = url;
-    });
-
-  } catch(e) {
-    console.warn('remove.bg failed:', e);
-    const it = items.find(p => p.id === itemId);
-    if (it) { it.processing = false; draw(); }
-  }
+  });
 }
 
 // ═══════════════════════════════════════════════════════
