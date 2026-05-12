@@ -384,284 +384,109 @@ function commitDrop() {
 }
 
 // ─────────────────────────────────────────────────────
-// IMAGE GENERATION — SVG objects with transparent background
-// Each SVG is a recognizable object drawn with paths.
-// Rendered to canvas — always transparent, no API needed.
+// IMAGE LOADING — OpenMoji via jsDelivr CDN
+// OpenMoji: free, open source emoji set, SVG format, transparent background.
+// CORS allowed from any domain. No API key, no rate limit for static files.
+// https://openmoji.org  —  License: CC BY-SA 4.0
 
-const OBJECTS = [
-  // Rose flower
-  (w,h) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="${w}" height="${h}">
-    <ellipse cx="50" cy="55" rx="22" ry="28" fill="#e63946"/>
-    <ellipse cx="38" cy="48" rx="16" ry="20" fill="#f4a261" opacity=".85"/>
-    <ellipse cx="62" cy="48" rx="16" ry="20" fill="#c1121f" opacity=".85"/>
-    <ellipse cx="50" cy="40" rx="14" ry="18" fill="#e63946"/>
-    <ellipse cx="50" cy="35" rx="8" ry="10" fill="#f4a261" opacity=".9"/>
-    <path d="M50 80 Q44 92 38 98" stroke="#2d6a4f" stroke-width="3" fill="none" stroke-linecap="round"/>
-    <ellipse cx="36" cy="91" rx="10" ry="6" fill="#40916c" transform="rotate(-30,36,91)"/>
-  </svg>`,
-
-  // Butterfly
-  (w,h) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="${w}" height="${h}">
-    <ellipse cx="28" cy="38" rx="24" ry="18" fill="#f4a261" opacity=".9" transform="rotate(-25,28,38)"/>
-    <ellipse cx="72" cy="38" rx="24" ry="18" fill="#f4a261" opacity=".9" transform="rotate(25,72,38)"/>
-    <ellipse cx="32" cy="65" rx="16" ry="12" fill="#e63946" opacity=".85" transform="rotate(20,32,65)"/>
-    <ellipse cx="68" cy="65" rx="16" ry="12" fill="#e63946" opacity=".85" transform="rotate(-20,68,65)"/>
-    <ellipse cx="28" cy="38" rx="14" ry="10" fill="#ffbe0b" opacity=".7" transform="rotate(-25,28,38)"/>
-    <ellipse cx="72" cy="38" rx="14" ry="10" fill="#ffbe0b" opacity=".7" transform="rotate(25,72,38)"/>
-    <path d="M50 25 Q48 50 50 75 Q52 50 50 25" stroke="#1a1a2e" stroke-width="3" fill="none"/>
-    <circle cx="50" cy="23" r="4" fill="#1a1a2e"/>
-    <path d="M50 20 Q42 10 36 14 M50 20 Q58 10 64 14" stroke="#1a1a2e" stroke-width="1.5" fill="none"/>
-  </svg>`,
-
-  // Camera
-  (w,h) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="${w}" height="${h}">
-    <rect x="10" y="32" width="80" height="52" rx="8" fill="#2b2d42"/>
-    <rect x="30" y="22" width="28" height="14" rx="4" fill="#2b2d42"/>
-    <circle cx="50" cy="58" r="18" fill="#8d99ae"/>
-    <circle cx="50" cy="58" r="13" fill="#edf2f4"/>
-    <circle cx="50" cy="58" r="9" fill="#457b9d"/>
-    <circle cx="50" cy="58" r="5" fill="#1d3557"/>
-    <circle cx="54" cy="54" r="2" fill="white" opacity=".6"/>
-    <rect x="70" y="40" width="10" height="7" rx="2" fill="#e63946"/>
-    <circle cx="20" cy="42" r="4" fill="#457b9d"/>
-  </svg>`,
-
-  // Sunflower
-  (w,h) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="${w}" height="${h}">
-    ${Array.from({length:12},(_,i)=>{const a=i*30*Math.PI/180; const x=50+Math.cos(a)*26, y=45+Math.sin(a)*26; return `<ellipse cx="${x}" cy="${y}" rx="9" ry="5" fill="#ffbe0b" transform="rotate(${i*30},${x},${y})"/>`}).join('')}
-    <circle cx="50" cy="45" r="16" fill="#6d4c2a"/>
-    <circle cx="50" cy="45" r="13" fill="#4a3120"/>
-    ${Array.from({length:7},(_,i)=>{const x=42+Math.random()*16, y=37+Math.random()*16; return `<circle cx="${x+i}" cy="${y}" r="1.5" fill="#ffbe0b" opacity=".6"/>`;}).join('')}
-    <path d="M50 62 L50 95" stroke="#2d6a4f" stroke-width="4" stroke-linecap="round"/>
-    <ellipse cx="38" cy="80" rx="12" ry="7" fill="#40916c" transform="rotate(-20,38,80)"/>
-  </svg>`,
-
-  // Cat face
-  (w,h) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="${w}" height="${h}">
-    <polygon points="20,42 12,18 36,35" fill="#f4a261"/>
-    <polygon points="80,42 88,18 64,35" fill="#f4a261"/>
-    <polygon points="22,40 16,22 34,35" fill="#ffb347" opacity=".6"/>
-    <polygon points="78,40 84,22 66,35" fill="#ffb347" opacity=".6"/>
-    <ellipse cx="50" cy="60" rx="35" ry="32" fill="#f4a261"/>
-    <ellipse cx="34" cy="52" rx="9" ry="12" fill="#1a1a2e"/>
-    <ellipse cx="66" cy="52" rx="9" ry="12" fill="#1a1a2e"/>
-    <ellipse cx="34" cy="52" rx="4" ry="10" fill="#1a1a2e"/>
-    <ellipse cx="66" cy="52" rx="4" ry="10" fill="#1a1a2e"/>
-    <circle cx="36" cy="50" r="2" fill="white"/>
-    <circle cx="68" cy="50" r="2" fill="white"/>
-    <path d="M44 68 Q50 73 56 68" stroke="#c1121f" stroke-width="2" fill="none"/>
-    <ellipse cx="50" cy="66" rx="5" ry="3.5" fill="#e63946"/>
-    <path d="M30 65 Q18 62 10 65 M30 65 Q18 68 10 65" stroke="#1a1a2e" stroke-width="1.2" fill="none"/>
-    <path d="M70 65 Q82 62 90 65 M70 65 Q82 68 90 65" stroke="#1a1a2e" stroke-width="1.2" fill="none"/>
-  </svg>`,
-
-  // Coffee cup
-  (w,h) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="${w}" height="${h}">
-    <path d="M20 35 L25 85 Q25 90 50 90 Q75 90 75 85 L80 35 Z" fill="#6f4e37"/>
-    <path d="M22 35 L26 80 Q26 86 50 86 Q74 86 74 80 L78 35 Z" fill="#8b5e3c"/>
-    <rect x="18" y="32" width="64" height="8" rx="3" fill="#5c3d1e"/>
-    <path d="M78 45 Q92 45 92 57 Q92 68 78 68" stroke="#6f4e37" stroke-width="5" fill="none" stroke-linecap="round"/>
-    <ellipse cx="50" cy="50" rx="22" ry="10" fill="#3e2012" opacity=".5"/>
-    <path d="M38 20 Q40 12 38 5" stroke="#adb5bd" stroke-width="2" fill="none" stroke-linecap="round"/>
-    <path d="M50 18 Q52 10 50 3" stroke="#adb5bd" stroke-width="2" fill="none" stroke-linecap="round"/>
-    <path d="M62 20 Q64 12 62 5" stroke="#adb5bd" stroke-width="2" fill="none" stroke-linecap="round"/>
-  </svg>`,
-
-  // Sneaker shoe
-  (w,h) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 80" width="${w}" height="${h}">
-    <path d="M10 55 Q15 30 40 28 Q55 27 65 32 L100 38 Q112 42 112 52 Q112 62 95 64 L18 64 Q8 64 10 55Z" fill="#e63946"/>
-    <path d="M40 28 Q48 18 58 20 Q68 22 65 32" fill="#f4a261"/>
-    <path d="M10 55 L95 55" stroke="white" stroke-width="2" opacity=".5"/>
-    <path d="M30 28 L28 55 M45 27 L43 55 M60 30 L58 55" stroke="white" stroke-width="1.5" opacity=".4"/>
-    <path d="M10 62 Q50 68 112 62 L112 66 Q50 72 10 66Z" fill="#1a1a2e"/>
-    <path d="M58 20 Q75 14 88 20 Q95 24 100 38" fill="#c1121f"/>
-  </svg>`,
-
-  // Polaroid photo
-  (w,h) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 90 100" width="${w}" height="${h}">
-    <rect x="5" y="5" width="80" height="90" rx="3" fill="white" filter="drop-shadow(2px 2px 4px rgba(0,0,0,0.3))"/>
-    <rect x="12" y="12" width="66" height="60" fill="#457b9d"/>
-    <rect x="12" y="12" width="66" height="60" fill="url(#pg)"/>
-    <defs><linearGradient id="pg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#a8dadc"/><stop offset="1" stop-color="#1d3557"/></linearGradient></defs>
-    <ellipse cx="35" cy="38" rx="12" ry="14" fill="#f4a261" opacity=".8"/>
-    <ellipse cx="58" cy="42" rx="9" ry="11" fill="#e63946" opacity=".7"/>
-    <rect x="22" y="76" width="46" height="4" rx="2" fill="#adb5bd" opacity=".5"/>
-  </svg>`,
-
-  // Leaf
-  (w,h) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 100" width="${w}" height="${h}">
-    <path d="M40 95 Q5 70 8 35 Q10 8 40 5 Q70 8 72 35 Q75 70 40 95Z" fill="#2d6a4f"/>
-    <path d="M40 95 Q8 68 10 35 Q12 10 40 7" fill="#40916c" opacity=".6"/>
-    <path d="M40 95 L40 5" stroke="#1b4332" stroke-width="2.5"/>
-    <path d="M40 30 Q25 25 15 30 M40 45 Q22 38 12 42 M40 60 Q24 55 16 58 M40 30 Q55 25 65 30 M40 45 Q58 38 68 42 M40 60 Q56 55 64 58" stroke="#1b4332" stroke-width="1.2" fill="none"/>
-    <path d="M40 7 Q42 5 40 5" fill="#52b788"/>
-  </svg>`,
-
-  // Diamond gem
-  (w,h) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 90" width="${w}" height="${h}">
-    <polygon points="50,5 85,35 50,85 15,35" fill="#4cc9f0" opacity=".9"/>
-    <polygon points="50,5 85,35 50,45" fill="#7bdff2" opacity=".9"/>
-    <polygon points="50,5 15,35 50,45" fill="#48cae4" opacity=".9"/>
-    <polygon points="15,35 50,45 50,85" fill="#0096c7"/>
-    <polygon points="85,35 50,45 50,85" fill="#023e8a" opacity=".85"/>
-    <polygon points="25,35 50,15 75,35 50,45" fill="white" opacity=".3"/>
-    <polygon points="50,5 62,28 50,35 38,28" fill="white" opacity=".4"/>
-  </svg>`,
-
-  // Lightning bolt
-  (w,h) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 70 100" width="${w}" height="${h}">
-    <polygon points="42,5 10,52 35,52 28,95 60,48 36,48" fill="#ffbe0b"/>
-    <polygon points="42,5 15,52 35,52 30,80 55,48 36,48" fill="#f4a261" opacity=".5"/>
-    <polygon points="42,5 22,52 35,52" fill="white" opacity=".3"/>
-  </svg>`,
-
-  // Eye
-  (w,h) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 70" width="${w}" height="${h}">
-    <path d="M10 35 Q60 5 110 35 Q60 65 10 35Z" fill="white"/>
-    <path d="M10 35 Q60 8 110 35" fill="none" stroke="#1a1a2e" stroke-width="1.5"/>
-    <circle cx="60" cy="35" r="18" fill="#457b9d"/>
-    <circle cx="60" cy="35" r="13" fill="#1a1a2e"/>
-    <circle cx="60" cy="35" r="8" fill="#2b2d42"/>
-    <circle cx="65" cy="30" r="4" fill="white" opacity=".7"/>
-    <circle cx="57" cy="38" r="2" fill="white" opacity=".4"/>
-    <path d="M10 35 Q60 62 110 35" fill="none" stroke="#1a1a2e" stroke-width="1.5"/>
-  </svg>`,
-
-  // Star
-  (w,h) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="${w}" height="${h}">
-    <polygon points="50,5 61,35 95,35 68,57 79,91 50,70 21,91 32,57 5,35 39,35" fill="#ffbe0b"/>
-    <polygon points="50,5 61,35 95,35 68,57 79,91 50,70 21,91 32,57 5,35 39,35" fill="url(#sg)" opacity=".4"/>
-    <defs><linearGradient id="sg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="white"/><stop offset="1" stop-color="#f4a261"/></linearGradient></defs>
-    <polygon points="50,15 58,38 82,38 64,52 71,76 50,62 29,76 36,52 18,38 42,38" fill="#f4d03f" opacity=".6"/>
-  </svg>`,
-
-  // Lips
-  (w,h) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 70" width="${w}" height="${h}">
-    <path d="M20 35 Q35 15 60 20 Q85 15 100 35 Q85 58 60 55 Q35 58 20 35Z" fill="#e63946"/>
-    <path d="M20 35 Q35 18 60 22 Q85 18 100 35" fill="#c1121f" opacity=".4"/>
-    <path d="M35 35 Q60 28 85 35" stroke="#c1121f" stroke-width="1.5" fill="none"/>
-    <path d="M20 35 Q35 18 60 22 Q85 18 100 35 Q85 45 60 43 Q35 45 20 35Z" fill="none" stroke="#c1121f" stroke-width="1"/>
-    <path d="M42 25 Q60 20 78 25 Q60 22 42 25Z" fill="white" opacity=".25"/>
-    <path d="M38 35 Q60 30 82 35" stroke="white" stroke-width="1" opacity=".2" fill="none"/>
-  </svg>`,
-
-  // Moon
-  (w,h) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 90 100" width="${w}" height="${h}">
-    <path d="M55 5 Q20 20 18 50 Q16 80 50 95 Q15 88 10 55 Q5 22 55 5Z" fill="#f4d03f"/>
-    <path d="M55 5 Q22 22 20 50 Q18 78 50 93" fill="#f0b429" opacity=".5"/>
-    <circle cx="30" cy="28" r="4" fill="#f0b429" opacity=".4"/>
-    <circle cx="22" cy="55" r="3" fill="#f0b429" opacity=".3"/>
-    <circle cx="38" cy="72" r="5" fill="#f0b429" opacity=".35"/>
-  </svg>`,
-
-  // Cactus
-  (w,h) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 110" width="${w}" height="${h}">
-    <rect x="30" y="20" width="20" height="75" rx="10" fill="#40916c"/>
-    <rect x="30" y="20" width="10" height="75" rx="7" fill="#52b788" opacity=".5"/>
-    <path d="M30 50 Q10 50 10 35 Q10 22 22 22 L30 22" fill="none" stroke="#40916c" stroke-width="14" stroke-linecap="round"/>
-    <path d="M50 45 Q70 45 70 30 Q70 17 58 17 L50 17" fill="none" stroke="#40916c" stroke-width="14" stroke-linecap="round"/>
-    <rect x="22" y="90" width="36" height="12" rx="4" fill="#6f4e37"/>
-    <rect x="18" y="98" width="44" height="8" rx="3" fill="#8b5e3c"/>
-    <line x1="34" y1="30" x2="30" y2="26" stroke="#2d6a4f" stroke-width="1.5"/>
-    <line x1="34" y1="38" x2="29" y2="36" stroke="#2d6a4f" stroke-width="1.5"/>
-    <line x1="46" y1="35" x2="50" y2="31" stroke="#2d6a4f" stroke-width="1.5"/>
-  </svg>`,
-
-  // Flamingo
-  (w,h) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 110" width="${w}" height="${h}">
-    <ellipse cx="45" cy="55" rx="20" ry="28" fill="#ffb3c6" transform="rotate(-15,45,55)"/>
-    <ellipse cx="42" cy="50" rx="14" ry="20" fill="#ff85a1" opacity=".6" transform="rotate(-15,42,50)"/>
-    <path d="M45 28 Q50 5 42 2 Q36 0 38 12 Q40 20 45 28" fill="#ffb3c6"/>
-    <circle cx="40" cy="8" r="8" fill="#ffb3c6"/>
-    <path d="M40 12 Q30 18 28 22 Q30 24 38 20" fill="#ff6b9d" stroke="#ff6b9d" stroke-width="1"/>
-    <circle cx="37" cy="7" r="2" fill="#1a1a2e"/>
-    <circle cx="38" cy="6.5" r="0.8" fill="white"/>
-    <path d="M45 80 L42 100 L38 100 L40 80" fill="#ff6b9d"/>
-    <path d="M42 100 L35 105 M38 100 L44 105" stroke="#ff6b9d" stroke-width="3" stroke-linecap="round"/>
-  </svg>`,
-
-  // Mushroom
-  (w,h) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 90 100" width="${w}" height="${h}">
-    <path d="M15 55 Q15 20 45 12 Q75 20 75 55Z" fill="#e63946"/>
-    <path d="M15 55 Q15 22 45 14" fill="#f4a261" opacity=".4"/>
-    <circle cx="30" cy="38" r="8" fill="white" opacity=".85"/>
-    <circle cx="55" cy="30" r="6" fill="white" opacity=".85"/>
-    <circle cx="62" cy="50" r="7" fill="white" opacity=".85"/>
-    <circle cx="38" cy="52" r="5" fill="white" opacity=".75"/>
-    <path d="M28 55 Q30 70 40 75 Q50 78 55 72 Q60 68 62 55" fill="#f5f0e8"/>
-    <path d="M28 55 Q30 68 40 73 Q50 76 62 55" fill="#e8ddd0" opacity=".5"/>
-    <path d="M35 60 L35 75 M45 58 L45 76 M55 60 L55 72" stroke="#c9b89a" stroke-width="1.5"/>
-  </svg>`,
-
-  // Cherry
-  (w,h) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 90 100" width="${w}" height="${h}">
-    <path d="M35 45 Q50 10 65 45" stroke="#2d6a4f" stroke-width="3" fill="none" stroke-linecap="round"/>
-    <path d="M50 15 Q55 5 62 8" stroke="#2d6a4f" stroke-width="2" fill="none" stroke-linecap="round"/>
-    <circle cx="28" cy="68" r="22" fill="#c1121f"/>
-    <circle cx="62" cy="65" r="20" fill="#e63946"/>
-    <circle cx="22" cy="62" r="7" fill="#ff6b6b" opacity=".5"/>
-    <circle cx="55" cy="58" r="6" fill="#ff8c8c" opacity=".5"/>
-    <circle cx="22" cy="62" r="3" fill="white" opacity=".4"/>
-    <circle cx="55" cy="58" r="2.5" fill="white" opacity=".4"/>
-  </svg>`,
-
-  // Crown
-  (w,h) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 110 80" width="${w}" height="${h}">
-    <polygon points="10,65 10,25 30,45 55,10 80,45 100,25 100,65" fill="#ffbe0b"/>
-    <polygon points="10,65 10,28 28,46 55,13 82,46 100,28 100,65" fill="#f4d03f" opacity=".5"/>
-    <rect x="8" y="62" width="94" height="14" rx="4" fill="#f4a261"/>
-    <rect x="8" y="62" width="94" height="7" rx="3" fill="#ffbe0b" opacity=".4"/>
-    <circle cx="55" cy="13" r="7" fill="#e63946"/>
-    <circle cx="10" cy="27" r="5" fill="#457b9d"/>
-    <circle cx="100" cy="27" r="5" fill="#457b9d"/>
-    <circle cx="28" cy="67" r="5" fill="#e63946" opacity=".8"/>
-    <circle cx="55" cy="67" r="5" fill="#2d6a4f" opacity=".8"/>
-    <circle cx="82" cy="67" r="5" fill="#e63946" opacity=".8"/>
-  </svg>`,
+// Curated list of OpenMoji unicode codepoints — diverse objects, animals, nature, food, etc.
+const EMOJIS = [
+  // Nature & plants
+  '1F335','1F337','1F338','1F339','1F33A','1F33B','1F33C','1F33D','1F33E','1F33F',
+  '1F340','1F341','1F342','1F343','1F344','1F490','1F4AE','2618',
+  // Animals
+  '1F408','1F409','1F40A','1F40B','1F40C','1F40D','1F40E','1F411','1F412',
+  '1F413','1F414','1F415','1F416','1F417','1F418','1F419','1F41A','1F41B',
+  '1F41C','1F41D','1F41E','1F41F','1F420','1F421','1F422','1F423','1F424',
+  '1F425','1F426','1F427','1F428','1F429','1F42A','1F42B','1F42C','1F42D',
+  '1F42E','1F42F','1F430','1F431','1F432','1F433','1F434','1F435','1F436',
+  '1F437','1F438','1F439','1F43A','1F43B','1F43C','1F43D','1F43E',
+  '1F98A','1F98B','1F98C','1F98D','1F98E','1F98F','1F990','1F991',
+  '1F992','1F993','1F994','1F995','1F996','1F997',
+  // Food & drink
+  '1F347','1F348','1F349','1F34A','1F34B','1F34C','1F34D','1F34E','1F34F',
+  '1F350','1F351','1F352','1F353','1F354','1F355','1F356','1F357','1F358',
+  '1F359','1F35A','1F35B','1F35C','1F35D','1F35E','1F35F','1F360','1F361',
+  '1F362','1F363','1F364','1F365','1F366','1F367','1F368','1F369','1F36A',
+  '1F370','1F371','1F372','1F373','1F374','1F375','1F376','1F377','1F378',
+  '1F379','1F37A','1F37B','1F37C','1F382','1F383',
+  // Objects & things
+  '1F4A1','1F4A3','1F4A5','1F4AB','1F4AF',
+  '1F680','1F681','1F682','1F683','1F684','1F685','1F686','1F687','1F688',
+  '1F689','1F68A','1F68B','1F68C','1F68D','1F68E','1F68F','1F690','1F691',
+  '1F6A2','1F6A4','1F6A5','1F6A7','1F6A8','1F6B2','1F6F4','1F6F5','1F6F8',
+  '2702','2708','26BD','26BE','1F3B8','1F3BA','1F3BB','1F3BC','1F3A8',
+  '1F451','1F452','1F453','1F454','1F455','1F456','1F457','1F458','1F459',
+  '1F45A','1F45B','1F45C','1F45D','1F45E','1F45F','1F460','1F461','1F462',
+  // Symbols & misc
+  '2764','1F495','1F496','1F497','1F498','1F499','1F49A','1F49B','1F49C',
+  '2B50','1F31F','1F4AB','26A1','1F525','1F4A7','2744','1F308','1F319',
+  '1F315','1F311',
 ];
 
-function svgToCanvas(svgStr, tw, th) {
+// jsDelivr CDN for OpenMoji SVGs — CORS enabled
+function emojiUrl(code) {
+  return `https://cdn.jsdelivr.net/gh/hfg-gmuend/openmoji@15.0.0/color/svg/${code}.svg`;
+}
+
+function loadSvgUrl(url, tw, th) {
   return new Promise(resolve => {
-    const blob = new Blob([svgStr], {type:'image/svg+xml'});
-    const url  = URL.createObjectURL(blob);
-    const img  = new Image();
+    const img = new Image();
+    // jsDelivr supports CORS — crossOrigin needed to draw to canvas
+    img.crossOrigin = 'anonymous';
     img.onload = () => {
       const c = document.createElement('canvas');
       c.width = tw; c.height = th;
       const ctx = c.getContext('2d');
       ctx.clearRect(0, 0, tw, th);
-      ctx.drawImage(img, 0, 0, tw, th);
-      URL.revokeObjectURL(url);
+      // Center with padding
+      const pad = tw * 0.08;
+      ctx.drawImage(img, pad, pad, tw - pad*2, th - pad*2);
       resolve(c);
     };
-    img.onerror = () => { URL.revokeObjectURL(url); resolve(null); };
+    img.onerror = () => resolve(null);
     img.src = url;
   });
 }
 
-async function loadTray(query='') {
-  tray.innerHTML='';
+// Shuffle array with seed
+function seededShuffle(arr, seed) {
+  const a = [...arr];
+  let s = seed | 0;
+  for (let i = a.length - 1; i > 0; i--) {
+    s = (s * 1664525 + 1013904223) | 0;
+    const j = ((s >>> 0) % (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
 
-  // Show skeletons
-  for (let i=0; i<THUMB_COUNT; i++) {
-    const tw=Math.round(THUMB_H*ASPECTS[i%ASPECTS.length]);
-    const sk=document.createElement('div');
-    sk.className='thumb loading'; sk.id='sk'+i; sk.style.width=tw+'px';
+async function loadTray(query = '') {
+  tray.innerHTML = '';
+
+  // Skeletons
+  for (let i = 0; i < THUMB_COUNT; i++) {
+    const tw = Math.round(THUMB_H * ASPECTS[i % ASPECTS.length]);
+    const sk = document.createElement('div');
+    sk.className = 'thumb loading'; sk.id = 'sk' + i; sk.style.width = tw + 'px';
     tray.appendChild(sk);
   }
 
-  // Pick a shuffled set of objects based on query seed
-  const seed  = query ? query.split('').reduce((a,c)=>a+c.charCodeAt(0),0) : Math.floor(Math.random()*9999);
-  const order = [...Array(OBJECTS.length).keys()].sort(()=>(seed%7)-3.5+(Math.random()-0.5));
-  const picks = order.slice(0, THUMB_COUNT);
+  // Pick THUMB_COUNT emojis, varied by query or random
+  const seed  = query
+    ? query.split('').reduce((a, c) => a + c.charCodeAt(0), 0) * 31
+    : Math.floor(Math.random() * 99999);
+  const picks = seededShuffle(EMOJIS, seed).slice(0, THUMB_COUNT);
 
-  await Promise.all(picks.map(async (objIdx, i) => {
-    const tw  = Math.round(THUMB_H*ASPECTS[i%ASPECTS.length]);
+  // Load in parallel — each updates its own skeleton
+  await Promise.all(picks.map(async (code, i) => {
+    const tw  = Math.round(THUMB_H * ASPECTS[i % ASPECTS.length]);
     const th  = THUMB_H;
-    const svg = OBJECTS[objIdx](tw*2, th*2);
-    const src = await svgToCanvas(svg, tw*2, th*2);
-    const sk  = document.getElementById('sk'+i);
+    const url = emojiUrl(code);
+    const src = await loadSvgUrl(url, tw * 2, th * 2);
+    const sk  = document.getElementById('sk' + i);
     if (src && sk?.isConnected) setThumb(sk, src, tw, th);
+    else if (sk?.isConnected) sk.remove(); // hide if failed
   }));
 }
 
