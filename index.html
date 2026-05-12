@@ -1,514 +1,1261 @@
-<!DOCTYPE html>
+import { useState, useEffect, useCallback, useRef } from “react”;
 
-<html lang="es">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>paste</title>
-<style>
-*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-html, body {
-  width: 100%; height: 100%; overflow: hidden;
-  touch-action: none; -webkit-tap-highlight-color: transparent;
-  background: #f5f2ed; user-select: none;
-}
-#c { position: fixed; top: 0; left: 0; display: block; touch-action: none; }
+// ─── Constants ────────────────────────────────────────────────────────────────
+const COLS = 7;
+const BASE_TIME = 20;   // level 1 starts with 20s
+const STREAK_THRESHOLD = 8;
 
-#tray {
-position: fixed; bottom: 48px; left: 0; right: 0; height: 130px;
-background: #111; display: flex; align-items: center;
-padding: 0 12px; gap: 10px;
-overflow-x: auto; overflow-y: hidden;
-touch-action: pan-x; -webkit-overflow-scrolling: touch;
-scrollbar-width: none; z-index: 10;
-}
-#tray::-webkit-scrollbar { display: none; }
-
-.thumb {
-flex-shrink: 0; height: 100px; overflow: hidden; border-radius: 2px;
-}
-.thumb.loading {
-width: 80px;
-background: #222;
-animation: pulse 1s ease-in-out infinite;
-}
-.thumb.ready {
-background: repeating-conic-gradient(#2a2a2a 0% 25%,#1e1e1e 0% 50%) 0 0/8px 8px;
-}
-.thumb canvas { display: block; height: 100%; width: auto; pointer-events: none; }
-@keyframes pulse { 0%,100%{opacity:.2} 50%{opacity:.5} }
-
-#searchbar {
-position: fixed; bottom: 0; left: 0; right: 0; height: 48px;
-background: #1a1a1a; display: flex; align-items: center;
-padding: 0 14px; gap: 10px; z-index: 10;
-}
-#searchbar input {
-flex: 1; height: 32px; background: #2a2a2a; border: none;
-border-radius: 16px; padding: 0 14px; color: #fff;
-font-size: 14px; font-family: monospace; outline: none;
-}
-#searchbar input::placeholder { color: rgba(255,255,255,0.25); }
-
-.icon-btn {
-width: 32px; height: 32px; border-radius: 50%; background: #2a2a2a;
-border: none; cursor: pointer; display: flex; align-items: center;
-justify-content: center; flex-shrink: 0; padding: 0;
-}
-.icon-btn:active { background: #3a3a3a; }
-
-.fab {
-position: fixed; width: 40px; height: 40px; border-radius: 50%;
-background: #111; border: none; display: flex; align-items: center;
-justify-content: center; z-index: 20; box-shadow: 0 2px 12px rgba(0,0,0,0.3);
-opacity: 0; pointer-events: none; transition: opacity 0.2s, transform 0.1s;
-cursor: pointer; padding: 0;
-}
-.fab.on { opacity: 1; pointer-events: auto; }
-.fab:active { transform: scale(0.88); }
-#btn-save { right: 14px; }
-#btn-undo { left: 14px; }
-
-#ghost {
-position: fixed; pointer-events: none; z-index: 999; display: none;
-transform-origin: center center; overflow: hidden; opacity: 0.9;
-box-shadow: 4px 12px 28px rgba(0,0,0,0.28);
-}
-#ghost canvas { display: block; width: 100%; height: 100%; }
-</style>
-
-</head>
-<body>
-
-<canvas id="c"></canvas>
-
-<div id="tray"></div>
-
-<div id="searchbar">
-  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style="flex-shrink:0;opacity:.3">
-    <circle cx="6.5" cy="6.5" r="4.5" stroke="white" stroke-width="1.5"/>
-    <line x1="10" y1="10" x2="14.5" y2="14.5" stroke="white" stroke-width="1.5" stroke-linecap="round"/>
-  </svg>
-  <input id="q" type="text" autocomplete="off" spellcheck="false" placeholder="buscar fotos…">
-  <button class="icon-btn" id="btn-search">
-    <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-      <polyline points="2,7 7,2 12,7" stroke="rgba(255,255,255,0.6)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-      <line x1="7" y1="2.5" x2="7" y2="12" stroke="rgba(255,255,255,0.6)" stroke-width="1.5" stroke-linecap="round"/>
-    </svg>
-  </button>
-  <button class="icon-btn" id="btn-refresh">
-    <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-      <path d="M12 7A5 5 0 1 1 9 2.5" stroke="rgba(255,255,255,0.6)" stroke-width="1.5" stroke-linecap="round"/>
-      <polyline points="9,1 9,3.5 11.5,3.5" stroke="rgba(255,255,255,0.6)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-    </svg>
-  </button>
-</div>
-
-<button class="fab" id="btn-save">
-  <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-    <line x1="8" y1="2" x2="8" y2="11" stroke="white" stroke-width="1.6" stroke-linecap="round"/>
-    <polyline points="4,8 8,12.5 12,8" stroke="white" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
-    <line x1="2.5" y1="14" x2="13.5" y2="14" stroke="white" stroke-width="1.6" stroke-linecap="round"/>
-  </svg>
-</button>
-<button class="fab" id="btn-undo">
-  <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-    <path d="M3.5 5.5H9a4 4 0 0 1 0 8H5" stroke="white" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
-    <polyline points="6.5,2.5 3.5,5.5 6.5,8.5" stroke="white" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
-  </svg>
-</button>
-
-<div id="ghost"><canvas></canvas></div>
-
-<script>
-'use strict';
-
-// ─────────────────────────────────────────────────────
-// CONFIG
-// ─────────────────────────────────────────────────────
-const THUMB_H      = 100;
-const THUMB_COUNT  = 12;  // fewer = faster initial load
-const ITEM_SCALE   = 1.9;
-const ASPECTS      = [0.8,1.1,0.75,1.2,0.9,1.0,0.85,1.15,0.7,1.25,0.95,1.05];
-const BOTTOM       = 178;
-
-// ─────────────────────────────────────────────────────
-// CANVAS SETUP
-// ─────────────────────────────────────────────────────
-const cvs  = document.getElementById('c');
-const ctx  = cvs.getContext('2d');
-const tray = document.getElementById('tray');
-
-function resize() {
-  cvs.width  = window.innerWidth;
-  cvs.height = window.innerHeight - BOTTOM;
-  cvs.style.cssText = `width:${cvs.width}px;height:${cvs.height}px;bottom:${BOTTOM}px;`;
-  positionFabs(); redraw();
-}
-function positionFabs() {
-  const y = window.innerHeight - BOTTOM - 52;
-  document.getElementById('btn-save').style.top = y + 'px';
-  document.getElementById('btn-undo').style.top = y + 'px';
-}
-window.addEventListener('resize', resize);
-
-// ─────────────────────────────────────────────────────
-// COORDINATES
-// ─────────────────────────────────────────────────────
-let panX = 0, panY = 0, zoom = 1;
-function clientToCanvas(sx, sy) { const r = cvs.getBoundingClientRect(); return [sx-r.left, sy-r.top]; }
-function canvasToWorld(cx, cy)  { return [(cx-panX)/zoom, (cy-panY)/zoom]; }
-function worldToCanvas(wx, wy)  { return [wx*zoom+panX, wy*zoom+panY]; }
-
-// ─────────────────────────────────────────────────────
-// ITEMS
-// ─────────────────────────────────────────────────────
-let items=[], zTop=0, idSeq=0, undoStack=[];
-
-function updateUI() {
-  const has = items.length > 0;
-  document.getElementById('btn-save').classList.toggle('on', has);
-  document.getElementById('btn-undo').classList.toggle('on', has);
-}
-
-// ─────────────────────────────────────────────────────
-// DRAW
-// ─────────────────────────────────────────────────────
-function redraw() {
-  ctx.clearRect(0,0,cvs.width,cvs.height);
-  ctx.fillStyle = '#f5f2ed';
-  ctx.fillRect(0,0,cvs.width,cvs.height);
-  ctx.fillStyle = 'rgba(0,0,0,0.07)';
-  const gs = 32*zoom, ox = ((panX%gs)+gs)%gs, oy = ((panY%gs)+gs)%gs;
-  for (let x=ox; x<cvs.width+gs; x+=gs)
-    for (let y=oy; y<cvs.height+gs; y+=gs) { ctx.beginPath(); ctx.arc(x,y,1,0,Math.PI*2); ctx.fill(); }
-  for (const item of [...items].sort((a,b)=>a.z-b.z)) {
-    const [cx,cy] = worldToCanvas(item.wx, item.wy);
-    ctx.save();
-    ctx.translate(cx,cy); ctx.rotate(item.rot*Math.PI/180); ctx.scale(item.sc*zoom,item.sc*zoom);
-    ctx.shadowColor='rgba(0,0,0,0.2)'; ctx.shadowBlur=16; ctx.shadowOffsetX=2; ctx.shadowOffsetY=6;
-    ctx.drawImage(item.src,-item.w/2,-item.h/2,item.w,item.h);
-    ctx.restore();
-  }
-}
-
-// ─────────────────────────────────────────────────────
-// HIT TEST
-// ─────────────────────────────────────────────────────
-function hitTest(cx, cy) {
-  for (const item of [...items].sort((a,b)=>b.z-a.z)) {
-    const [icx,icy] = worldToCanvas(item.wx,item.wy);
-    const dx=cx-icx, dy=cy-icy, rad=-item.rot*Math.PI/180;
-    const lx=(dx*Math.cos(rad)-dy*Math.sin(rad))/(item.sc*zoom);
-    const ly=(dx*Math.sin(rad)+dy*Math.cos(rad))/(item.sc*zoom);
-    if (Math.abs(lx)<=item.w/2 && Math.abs(ly)<=item.h/2) return item;
-  }
-  return null;
-}
-
-// ─────────────────────────────────────────────────────
-// TAP
-// ─────────────────────────────────────────────────────
-let lastTap = null;
-function handleTap(item, cx, cy) {
-  const now = Date.now();
-  const dbl = lastTap && lastTap.id===item.id && now-lastTap.time<320 && Math.hypot(cx-lastTap.cx,cy-lastTap.cy)<30;
-  if (dbl) {
-    [...items].sort((a,b)=>a.z-b.z).forEach((p,i)=>{ p.z=i+1; });
-    item.z=0; lastTap=null;
-  } else {
-    const next = items.filter(p=>p.id!==item.id&&p.z>item.z).sort((a,b)=>a.z-b.z)[0];
-    if (next) { const t=item.z; item.z=next.z; next.z=t; }
-    lastTap = { id:item.id, time:now, cx, cy };
-  }
-  redraw();
-}
-
-// ─────────────────────────────────────────────────────
-// CANVAS TOUCH + MOUSE
-// ─────────────────────────────────────────────────────
-let activeTouches={}, panStart=null, pinchStart=null, dragItem=null, pinchItem=null;
-
-cvs.addEventListener('touchstart', e => {
-  e.preventDefault();
-  for (const t of e.changedTouches) { const [cx,cy]=clientToCanvas(t.clientX,t.clientY); activeTouches[t.identifier]={cx,cy}; }
-  if (e.touches.length===1) {
-    const [cx,cy]=clientToCanvas(e.touches[0].clientX,e.touches[0].clientY);
-    const hit=hitTest(cx,cy);
-    if (hit) { hit.z=++zTop; dragItem={item:hit,tid:e.touches[0].identifier,cx0:cx,cy0:cy,wx0:hit.wx,wy0:hit.wy,moved:false}; panStart=null; }
-    else { panStart={panX,panY,cx0:cx,cy0:cy}; dragItem=null; }
-    pinchStart=null; pinchItem=null;
-  } else if (e.touches.length===2) {
-    const [ta,tb]=[e.touches[0],e.touches[1]];
-    const [cxa,cya]=clientToCanvas(ta.clientX,ta.clientY), [cxb,cyb]=clientToCanvas(tb.clientX,tb.clientY);
-    const ha=hitTest(cxa,cya), hb=hitTest(cxb,cyb);
-    if (ha&&hb&&ha.id===hb.id) {
-      const d=Math.hypot(cxa-cxb,cya-cyb), ang=Math.atan2(cyb-cya,cxb-cxa);
-      pinchItem={item:ha,tids:[ta.identifier,tb.identifier],d0:d,sc0:ha.sc,ang0:ang,rot0:ha.rot};
-      dragItem=null; panStart=null; pinchStart=null;
-    } else {
-      pinchStart={panX,panY,zoom,d0:Math.hypot(cxa-cxb,cya-cyb),mx0:(cxa+cxb)/2,my0:(cya+cyb)/2};
-      dragItem=null; panStart=null; pinchItem=null;
-    }
-  }
-  redraw();
-}, {passive:false});
-
-cvs.addEventListener('touchmove', e => {
-  e.preventDefault();
-  for (const t of e.changedTouches) { const [cx,cy]=clientToCanvas(t.clientX,t.clientY); if(activeTouches[t.identifier]) activeTouches[t.identifier]={cx,cy}; }
-  if (dragItem&&e.touches.length===1) {
-    for (const t of e.touches) {
-      if (t.identifier!==dragItem.tid) continue;
-      const [cx,cy]=clientToCanvas(t.clientX,t.clientY);
-      const dx=cx-dragItem.cx0, dy=cy-dragItem.cy0;
-      if (Math.hypot(dx,dy)>5) dragItem.moved=true;
-      dragItem.item.wx=dragItem.wx0+dx/zoom; dragItem.item.wy=dragItem.wy0+dy/zoom;
-    }
-  }
-  if (pinchItem&&e.touches.length>=2) {
-    let ta=null,tb=null;
-    for (const t of e.touches) { if(t.identifier===pinchItem.tids[0])ta=t; if(t.identifier===pinchItem.tids[1])tb=t; }
-    if (ta&&tb) {
-      const [cxa,cya]=clientToCanvas(ta.clientX,ta.clientY), [cxb,cyb]=clientToCanvas(tb.clientX,tb.clientY);
-      pinchItem.item.sc=Math.max(0.1,Math.min(6,pinchItem.sc0*Math.hypot(cxa-cxb,cya-cyb)/pinchItem.d0));
-      pinchItem.item.rot=pinchItem.rot0+(Math.atan2(cyb-cya,cxb-cxa)-pinchItem.ang0)*180/Math.PI;
-    }
-  }
-  if (pinchStart&&e.touches.length>=2) {
-    const [ta,tb]=[e.touches[0],e.touches[1]];
-    const [cxa,cya]=clientToCanvas(ta.clientX,ta.clientY), [cxb,cyb]=clientToCanvas(tb.clientX,tb.clientY);
-    const d=Math.hypot(cxa-cxb,cya-cyb), mx=(cxa+cxb)/2, my=(cya+cyb)/2;
-    const nz=Math.max(0.08,Math.min(10,pinchStart.zoom*d/pinchStart.d0)), r=nz/pinchStart.zoom;
-    panX=mx-r*(pinchStart.mx0-pinchStart.panX); panY=my-r*(pinchStart.my0-pinchStart.panY); zoom=nz;
-  }
-  if (panStart&&e.touches.length===1) {
-    const [cx,cy]=clientToCanvas(e.touches[0].clientX,e.touches[0].clientY);
-    panX=panStart.panX+(cx-panStart.cx0); panY=panStart.panY+(cy-panStart.cy0);
-  }
-  redraw();
-}, {passive:false});
-
-cvs.addEventListener('touchend', e => {
-  e.preventDefault();
-  for (const t of e.changedTouches) delete activeTouches[t.identifier];
-  if (e.touches.length===0) {
-    if (dragItem&&!dragItem.moved) handleTap(dragItem.item,dragItem.cx0,dragItem.cy0);
-    dragItem=null; pinchItem=null; panStart=null; pinchStart=null;
-  }
-  if (e.touches.length<2) pinchItem=null;
-  redraw();
-}, {passive:false});
-
-let mouseState=null, mouseClickItem=null;
-cvs.addEventListener('mousedown', e => {
-  const [cx,cy]=clientToCanvas(e.clientX,e.clientY), hit=hitTest(cx,cy);
-  mouseClickItem=hit?{item:hit,cx,cy,moved:false}:null;
-  if (hit) { hit.z=++zTop; mouseState={type:'drag',item:hit,cx0:cx,cy0:cy,wx0:hit.wx,wy0:hit.wy}; }
-  else mouseState={type:'pan',panX,panY,cx0:cx,cy0:cy};
-});
-document.addEventListener('mousemove', e => {
-  if (!mouseState) return;
-  const [cx,cy]=clientToCanvas(e.clientX,e.clientY);
-  if (mouseState.type==='drag') {
-    const dx=cx-mouseState.cx0, dy=cy-mouseState.cy0;
-    if (mouseClickItem&&Math.hypot(dx,dy)>4) mouseClickItem.moved=true;
-    mouseState.item.wx=mouseState.wx0+dx/zoom; mouseState.item.wy=mouseState.wy0+dy/zoom;
-  } else { panX=mouseState.panX+(cx-mouseState.cx0); panY=mouseState.panY+(cy-mouseState.cy0); }
-  redraw();
-});
-document.addEventListener('mouseup', () => {
-  if (mouseClickItem&&!mouseClickItem.moved) handleTap(mouseClickItem.item,mouseClickItem.cx,mouseClickItem.cy);
-  mouseClickItem=null; mouseState=null;
-});
-cvs.addEventListener('wheel', e => {
-  e.preventDefault();
-  const nz=Math.max(0.08,Math.min(10,zoom*(e.deltaY>0?0.9:1.1))), [cx,cy]=clientToCanvas(e.clientX,e.clientY);
-  panX=cx-(cx-panX)*nz/zoom; panY=cy-(cy-panY)*nz/zoom; zoom=nz; redraw();
-}, {passive:false});
-
-// ─────────────────────────────────────────────────────
-// GHOST / DROP
-// ─────────────────────────────────────────────────────
-const ghost=document.getElementById('ghost'), ghostCanvas=ghost.querySelector('canvas'), ghostCtx=ghostCanvas.getContext('2d');
-let ghostSrc=null, ghostW=0, ghostH=0, ghostRot=0;
-let trayTouchId=null, trayStartX=0, trayStartY=0, trayDragging=false, trayScrolling=false, mouseTrayActive=false;
-
-tray.addEventListener('touchstart', e => {
-  const thumb=e.target.closest('.thumb');
-  if (!thumb?._src) return;
-  const t=e.changedTouches[0];
-  trayTouchId=t.identifier; trayStartX=t.clientX; trayStartY=t.clientY; trayDragging=false; trayScrolling=false;
-}, {passive:true});
-
-tray.addEventListener('touchmove', e => {
-  if (trayTouchId===null) return;
-  let t=null; for (const touch of e.touches) if (touch.identifier===trayTouchId){t=touch;break;}
-  if (!t) return;
-  const dx=t.clientX-trayStartX, dy=trayStartY-t.clientY;
-  if (!trayDragging&&!trayScrolling) {
-    if (Math.abs(dx)>Math.abs(dy)+5){trayScrolling=true;return;}
-    if (dy>12) {
-      e.preventDefault();
-      const thumb=document.elementFromPoint(trayStartX,trayStartY)?.closest('.thumb');
-      if (!thumb?._src) return;
-      startGhost(thumb,t.clientX,t.clientY); trayDragging=true;
-    }
-    return;
-  }
-  if (trayDragging) { e.preventDefault(); ghost.style.left=(t.clientX-ghostW/2)+'px'; ghost.style.top=(t.clientY-ghostH/2)+'px'; }
-}, {passive:false});
-
-tray.addEventListener('touchend', ()=>{ if(trayDragging)commitDrop(); trayTouchId=null; trayDragging=false; }, {passive:true});
-tray.addEventListener('mousedown', e => {
-  const thumb=e.target.closest('.thumb'); if (!thumb?._src) return;
-  e.preventDefault(); startGhost(thumb,e.clientX,e.clientY); mouseTrayActive=true;
-});
-document.addEventListener('mousemove', e=>{ if(mouseTrayActive){ghost.style.left=(e.clientX-ghostW/2)+'px';ghost.style.top=(e.clientY-ghostH/2)+'px';} });
-document.addEventListener('mouseup', ()=>{ if(mouseTrayActive){mouseTrayActive=false;commitDrop();} });
-
-function startGhost(thumb, cx, cy) {
-  ghostSrc=thumb._src; ghostW=Math.round(thumb._w*ITEM_SCALE); ghostH=Math.round(thumb._h*ITEM_SCALE); ghostRot=(Math.random()-0.5)*20;
-  ghost.style.cssText=`display:block;width:${ghostW}px;height:${ghostH}px;left:${cx-ghostW/2}px;top:${cy-ghostH/2}px;transform:rotate(${ghostRot}deg);`;
-  ghostCanvas.width=ghostW; ghostCanvas.height=ghostH; ghostCtx.clearRect(0,0,ghostW,ghostH); ghostCtx.drawImage(ghostSrc,0,0,ghostW,ghostH);
-}
-function commitDrop() {
-  const gr=ghost.getBoundingClientRect(); ghost.style.display='none';
-  const [ccx,ccy]=clientToCanvas(gr.left+gr.width/2,gr.top+gr.height/2);
-  if (ccx<0||ccy<0||ccx>cvs.width||ccy>cvs.height) return;
-  const [wx,wy]=canvasToWorld(ccx,ccy);
-  items.push({id:++idSeq,src:ghostSrc,w:ghostW,h:ghostH,wx,wy,rot:ghostRot,sc:1,z:++zTop,flipX:false});
-  undoStack.push(idSeq); updateUI(); redraw();
-}
-
-// ─────────────────────────────────────────────────────
-// IMAGE LOADING
-// Giphy stickers via Cloudflare Worker proxy (resolves CORS).
-// Worker URL: silent-rice-55b5.glastraaguila.workers.dev
-// Stickers have transparent backgrounds by design.
-// Search uses keyword; default loads trending with random offset.
-
-const WORKER = 'https://silent-rice-55b5.glastraaguila.workers.dev';
-const RAND_TERMS = [
-  'nature','flowers','people','fashion','animals','food','city',
-  'vintage','space','fire','music','art','dance','sport','travel',
-  'summer','winter','night','rainbow','ocean'
+// Rows calculated to fill screen: ~10 visible rows per level, growing by 2
+const LEVELS = [
+{ level: 1, rows: 10 },
+{ level: 2, rows: 12 },
+{ level: 3, rows: 14 },
+{ level: 4, rows: 16 },
+{ level: 5, rows: 18 },
+{ level: 6, rows: 20 },
+{ level: 7, rows: 22 },
+{ level: 8, rows: 24 },
 ];
 
-function seededShuffle(arr, seed) {
-  const a = [...arr]; let s = seed | 0;
-  for (let i = a.length - 1; i > 0; i--) {
-    s = (s * 1664525 + 1013904223) | 0;
-    [a[i], a[(s >>> 0) % (i + 1)]] = [a[(s >>> 0) % (i + 1)], a[i]];
+// ─── Bubble skins ─────────────────────────────────────────────────────────────
+const SKINS = {
+classic: {
+name: “Clásica”, emoji: “🫧”, price: 0,
+gradient: “radial-gradient(circle at 38% 33%, rgba(255,255,255,0.62) 0%, rgba(208,228,246,0.50) 30%, rgba(165,198,228,0.68) 62%, rgba(128,165,200,0.82) 100%)”,
+glow: “rgba(60,100,140,0.22)”,
+},
+rose: {
+name: “Rosa”, emoji: “🌸”, price: 50,
+gradient: “radial-gradient(circle at 38% 33%, rgba(255,240,245,0.75) 0%, rgba(255,200,220,0.55) 30%, rgba(240,150,185,0.65) 62%, rgba(210,100,145,0.75) 100%)”,
+glow: “rgba(210,80,130,0.25)”,
+},
+gold: {
+name: “Dorada”, emoji: “✨”, price: 100,
+gradient: “radial-gradient(circle at 38% 33%, rgba(255,255,220,0.8) 0%, rgba(255,235,150,0.6) 30%, rgba(240,195,80,0.7) 62%, rgba(200,150,30,0.8) 100%)”,
+glow: “rgba(200,150,30,0.3)”,
+},
+neon: {
+name: “Neón”, emoji: “💚”, price: 150,
+gradient: “radial-gradient(circle at 38% 33%, rgba(220,255,230,0.8) 0%, rgba(150,255,190,0.6) 30%, rgba(60,220,130,0.68) 62%, rgba(20,170,90,0.8) 100%)”,
+glow: “rgba(20,170,90,0.3)”,
+},
+};
+
+// ─── Sound skins ──────────────────────────────────────────────────────────────
+const SOUND_SKINS = {
+classic: { name: “Clásico”, emoji: “💧”, price: 0 },
+metal:   { name: “Metálico”, emoji: “🔩”, price: 50 },
+exag:    { name: “Exagerado”, emoji: “💥”, price: 80 },
+};
+
+// ─── Storage helpers ──────────────────────────────────────────────────────────
+function store(key, val) { try { localStorage.setItem(key, JSON.stringify(val)); } catch {} }
+function load(key, def)  { try { const v = localStorage.getItem(key); return v ? JSON.parse(v) : def; } catch { return def; } }
+
+// ─── Haptic ───────────────────────────────────────────────────────────────────
+function haptic(type = “light”) {
+try {
+if (navigator.vibrate) {
+navigator.vibrate(type === “light” ? 8 : type === “medium” ? 20 : 40);
+}
+} catch {}
+}
+
+// ─── Achievements ─────────────────────────────────────────────────────────────
+const ACHIEVEMENTS = [
+{ id: “first”,    emoji: “🎯”, name: “Primera burbuja”,    desc: “Revienta tu primera burbuja”,         check: (s) => s.totalPopped >= 1 },
+{ id: “sheet”,    emoji: “📄”, name: “Hoja completa”,      desc: “Completa una hoja entera”,             check: (s) => s.sheetsCompleted >= 1 },
+{ id: “combo10”,  emoji: “🔥”, name: “Combo x10”,          desc: “Alcanza un combo de 10”,               check: (s) => s.maxCombo >= 10 },
+{ id: “hundred”,  emoji: “💯”, name: “100 burbujas”,        desc: “Revienta 100 burbujas en total”,       check: (s) => s.totalPopped >= 100 },
+{ id: “thousand”, emoji: “🏆”, name: “1000 burbujas”,       desc: “Revienta 1000 burbujas en total”,      check: (s) => s.totalPopped >= 1000 },
+{ id: “streak”,   emoji: “⚡”, name: “En llamas”,           desc: “Activa el modo racha”,                 check: (s) => s.streakActivated >= 1 },
+{ id: “allskins”, emoji: “🎨”, name: “Coleccionista”,       desc: “Desbloquea todas las skins”,           check: (s) => s.unlockedSkins?.length >= Object.keys(SKINS).length },
+];
+
+// ─── Factories ────────────────────────────────────────────────────────────────
+let buid = 0;
+const makeBubble = () => ({ uid: buid++, popped: false, shineX: 16 + Math.random()*20, shineY: 9 + Math.random()*12, floatDelay: Math.random()*3, floatDuration: 2.4 + Math.random()*1.2 });
+const makeRows   = (rows) => Array.from({ length: rows }, () => Array.from({ length: COLS }, makeBubble));
+
+function makeConfetti() {
+return Array.from({ length: 80 }, (_, i) => ({
+id: i, x: Math.random()*100,
+color: [”#ff6b6b”,”#ffd93d”,”#6bcb77”,”#4d96ff”,”#ff6bcd”,”#fff”,”#ffaa00”][i%7],
+size: 5 + Math.random()*9, delay: Math.random()*1, duration: 1.6 + Math.random()*1.4,
+drift: (Math.random()-0.5)*60, rot: Math.random()*360, shape: Math.random()>0.4?“rect”:“circle”,
+}));
+}
+
+let spid = 0;
+function makeSplash(cx, cy) {
+return Array.from({ length: 8 }, () => {
+const a = Math.random()*Math.PI*2, spd = 18 + Math.random()*32;
+return { id: spid++, cx, cy, vx: Math.cos(a)*spd, vy: Math.sin(a)*spd, size: 2.5 + Math.random()*5 };
+});
+}
+
+function getNextLevel(cur) {
+const idx = LEVELS.findIndex(l => l.level === cur.level);
+return idx < LEVELS.length-1 ? LEVELS[idx+1] : LEVELS[idx];
+}
+
+// ─── Sound engine ─────────────────────────────────────────────────────────────
+function useSound(soundSkin) {
+const actx = useRef(null);
+return useCallback((combo = 1) => {
+try {
+if (!actx.current) actx.current = new (window.AudioContext || window.webkitAudioContext)();
+const ac = actx.current; const now = ac.currentTime;
+const skin = soundSkin || “classic”;
+
+```
+  if (skin === "classic") {
+    const p = 0.75 + Math.random()*0.5;
+    const o = ac.createOscillator(); const g = ac.createGain();
+    o.connect(g); g.connect(ac.destination); o.type = "sine";
+    o.frequency.setValueAtTime(180*p, now); o.frequency.exponentialRampToValueAtTime(45, now+0.09);
+    g.gain.setValueAtTime(0.32, now); g.gain.exponentialRampToValueAtTime(0.001, now+0.13);
+    o.start(now); o.stop(now+0.13);
+    const bl = Math.floor(ac.sampleRate*0.08); const buf = ac.createBuffer(1,bl,ac.sampleRate);
+    const d = buf.getChannelData(0); for(let i=0;i<bl;i++) d[i]=Math.random()*2-1;
+    const ns = ac.createBufferSource(); ns.buffer=buf;
+    const hpf = ac.createBiquadFilter(); hpf.type="highpass"; hpf.frequency.value=1400;
+    const gn = ac.createGain(); ns.connect(hpf); hpf.connect(gn); gn.connect(ac.destination);
+    gn.gain.setValueAtTime(0.12,now); gn.gain.exponentialRampToValueAtTime(0.001,now+0.08);
+    ns.start(now); ns.stop(now+0.08);
+  } else if (skin === "metal") {
+    const p = 1.2 + Math.random()*0.3;
+    const o = ac.createOscillator(); const g = ac.createGain();
+    o.connect(g); g.connect(ac.destination); o.type = "square";
+    o.frequency.setValueAtTime(400*p, now); o.frequency.exponentialRampToValueAtTime(80, now+0.06);
+    g.gain.setValueAtTime(0.15, now); g.gain.exponentialRampToValueAtTime(0.001, now+0.08);
+    o.start(now); o.stop(now+0.08);
+    const o2 = ac.createOscillator(); const g2 = ac.createGain();
+    o2.connect(g2); g2.connect(ac.destination); o2.type="sawtooth";
+    o2.frequency.setValueAtTime(600*p,now); o2.frequency.exponentialRampToValueAtTime(120,now+0.04);
+    g2.gain.setValueAtTime(0.1,now); g2.gain.exponentialRampToValueAtTime(0.001,now+0.05);
+    o2.start(now); o2.stop(now+0.05);
+  } else if (skin === "exag") {
+    const p = 0.5 + Math.random()*0.4;
+    const o = ac.createOscillator(); const g = ac.createGain();
+    o.connect(g); g.connect(ac.destination); o.type="sine";
+    o.frequency.setValueAtTime(300*p,now); o.frequency.exponentialRampToValueAtTime(20,now+0.25);
+    g.gain.setValueAtTime(0.5,now); g.gain.exponentialRampToValueAtTime(0.001,now+0.3);
+    o.start(now); o.stop(now+0.3);
+    const o2 = ac.createOscillator(); const g2=ac.createGain();
+    o2.connect(g2); g2.connect(ac.destination); o2.type="triangle";
+    o2.frequency.setValueAtTime(800*p,now); o2.frequency.exponentialRampToValueAtTime(50,now+0.15);
+    g2.gain.setValueAtTime(0.25,now); g2.gain.exponentialRampToValueAtTime(0.001,now+0.18);
+    o2.start(now); o2.stop(now+0.18);
   }
-  return a;
+} catch {}
+```
+
+}, [soundSkin]);
 }
 
-async function fetchStickers(query) {
-  const offset = Math.floor(Math.random() * 200);
-  const term   = query || RAND_TERMS[Math.floor(Math.random() * RAND_TERMS.length)];
-  const url    = `${WORKER}/search?q=${encodeURIComponent(term)}&limit=${THUMB_COUNT}&offset=${offset}&rating=g`;
-  try {
-    const res  = await fetch(url);
-    const data = await res.json();
-    return data.data || [];
-  } catch(e) {
-    console.warn('Giphy Worker error:', e);
-    return [];
-  }
+// ─── Animated score counter ───────────────────────────────────────────────────
+function useAnimatedScore(target) {
+const [display, setDisplay] = useState(target);
+const prev = useRef(target);
+useEffect(() => {
+const diff = target - prev.current;
+if (diff <= 0) { setDisplay(target); prev.current = target; return; }
+const steps = Math.min(diff, 8);
+let i = 0;
+const iv = setInterval(() => {
+i++;
+setDisplay(Math.round(prev.current + (diff * i) / steps));
+if (i >= steps) { clearInterval(iv); prev.current = target; }
+}, 30);
+return () => clearInterval(iv);
+}, [target]);
+return display;
 }
 
-function loadStickerImage(url, tw, th) {
-  return new Promise(resolve => {
-    const img = new Image();
-    img.crossOrigin = 'anonymous';
-    img.onload = () => {
-      const c   = document.createElement('canvas');
-      c.width   = tw; c.height = th;
-      const ctx = c.getContext('2d');
-      ctx.clearRect(0, 0, tw, th);
-      ctx.drawImage(img, 0, 0, tw, th);
-      resolve(c);
-    };
-    img.onerror = () => resolve(null);
-    img.src = url;
-  });
+// ═══════════════════════════════════════════════════════════════════════════════
+// ACHIEVEMENT TOAST
+// ═══════════════════════════════════════════════════════════════════════════════
+function AchievementToast({ achievement, onDone }) {
+useEffect(() => { const t = setTimeout(onDone, 2800); return () => clearTimeout(t); }, []);
+return (
+<div style={st.achToast}>
+<span style={{ fontSize: 24 }}>{achievement.emoji}</span>
+<div>
+<div style={st.achName}>{achievement.name}</div>
+<div style={st.achDesc}>{achievement.desc}</div>
+</div>
+</div>
+);
 }
 
-async function loadTray(query = '') {
-  tray.innerHTML = '';
+// ═══════════════════════════════════════════════════════════════════════════════
+// HOME SCREEN
+// ═══════════════════════════════════════════════════════════════════════════════
+function HomeScreen({ onSelect, onShop, onStats, onAchievements, onSettings }) {
+const hsInf = load(“hs_chill”, 0);
+const hsTime = load(“hs_time”, 0);
+const [floaters] = useState(() => Array.from({ length: 10 }, (_, i) => ({
+id: i, x: 5 + Math.random()*90, size: 20 + Math.random()*35,
+delay: Math.random()*4, duration: 4 + Math.random()*4,
+})));
 
-  // Skeletons
-  for (let i = 0; i < THUMB_COUNT; i++) {
-    const tw = Math.round(THUMB_H * ASPECTS[i % ASPECTS.length]);
-    const sk = document.createElement('div');
-    sk.className = 'thumb loading'; sk.id = 'sk' + i; sk.style.width = tw + 'px';
-    tray.appendChild(sk);
-  }
-
-  const stickers = await fetchStickers(query);
-
-  await Promise.all(stickers.map(async (s, i) => {
-    const sk  = document.getElementById('sk' + i);
-    if (!sk) return;
-    const tw  = Math.round(THUMB_H * ASPECTS[i % ASPECTS.length]);
-    const th  = THUMB_H;
-    // fixed_height_still = static PNG frame, transparent for stickers
-    const url = s.images?.fixed_height_still?.url
-             || s.images?.fixed_height?.url
-             || s.images?.downsized?.url;
-    if (!url) return;
-    const src = await loadStickerImage(url, tw, th);
-    if (src && sk.isConnected) setThumb(sk, src, tw, th);
-    else if (sk.isConnected) sk.remove();
-  }));
-
-  // Remove unused skeletons
-  for (let i = stickers.length; i < THUMB_COUNT; i++)
-    document.getElementById('sk' + i)?.remove();
+return (
+<div style={st.root}>
+<style>{css}</style>
+<div style={st.bg} />
+{floaters.map(f => (
+<div key={f.id} className=“homeBubble” style={{
+position:“fixed”, bottom:”-60px”, left:`${f.x}%`,
+width: f.size, height: f.size, borderRadius:“50%”, pointerEvents:“none”, zIndex:0,
+background:“radial-gradient(circle at 38% 33%, rgba(255,255,255,0.55) 0%, rgba(200,225,248,0.4) 40%, rgba(160,195,230,0.55) 100%)”,
+boxShadow:“0 2px 8px rgba(80,120,180,0.12)”,
+animationDelay:`${f.delay}s`, animationDuration:`${f.duration}s`,
+}} />
+))}
+<div style={st.homeWrap}>
+<div style={st.homeLogo} className="bubbleFloat3">🫧</div>
+<div style={st.homeTitle}>BubbleWrap</div>
+<div style={st.homeSub}>Revienta todo</div>
+<div style={st.modeCards}>
+<button style={{…st.modeCard,…st.modeInf}} onClick={() => onSelect(“chill”)}>
+<div style={st.modeEmoji}>🍃</div>
+<div style={st.modeName}>Chill</div>
+<div style={st.modeDesc}>Sin tiempo. Música zen. Revienta a tu ritmo.</div>
+{hsInf > 0 && <div style={st.modeHS}>🏆 {hsInf} pts</div>}
+</button>
+<button style={{…st.modeCard,…st.modeTime}} onClick={() => onSelect(“time”)}>
+<div style={st.modeEmoji}>⚡</div>
+<div style={st.modeName}>Challenge</div>
+<div style={st.modeDesc}>20s por nivel. Revienta todo antes que se acabe.</div>
+{hsTime > 0 && <div style={st.modeHS}>🏆 {hsTime} pts</div>}
+</button>
+</div>
+<div style={st.homeActions}>
+<button style={st.homeBtn} onClick={onShop}>🛍️ Tienda</button>
+<button style={st.homeBtn} onClick={onStats}>📊 Stats</button>
+<button style={st.homeBtn} onClick={onAchievements}>🏅 Logros</button>
+<button style={st.homeBtn} onClick={onSettings}>⚙️ Config</button>
+</div>
+</div>
+</div>
+);
 }
 
-function setThumb(sk, src, tw, th) {
-  if (!sk?.isConnected) return;
-  sk.className = 'thumb ready';
-  sk.style.cssText = `width:${tw}px;height:${th}px;`
-    + `transform:rotate(${(Math.random()-0.5)*14}deg);`
-    + `margin-top:${(Math.random()-0.5)*16}px;`
-    + `background:repeating-conic-gradient(#2a2a2a 0% 25%,#1e1e1e 0% 50%) 0 0/8px 8px;`;
-  sk._src=src; sk._w=tw; sk._h=th;
-  const c=document.createElement('canvas'); c.width=tw; c.height=th;
-  c.getContext('2d').drawImage(src, 0, 0, tw, th);
-  c.style.cssText='display:block;height:100%;width:auto;pointer-events:none;';
-  sk.appendChild(c);
+// ═══════════════════════════════════════════════════════════════════════════════
+// SHOP SCREEN
+// ═══════════════════════════════════════════════════════════════════════════════
+function ShopScreen({ onBack }) {
+const [coins, setCoins]             = useState(() => load(“coins”, 0));
+const [unlockedSkins, setUnlocked]  = useState(() => load(“unlockedSkins”, [“classic”]));
+const [unlockedSound, setUSound]    = useState(() => load(“unlockedSound”, [“classic”]));
+const [activeSkin, setActiveSkin]   = useState(() => load(“activeSkin”, “classic”));
+const [activeSound, setActiveSound] = useState(() => load(“activeSound”, “classic”));
+
+const buy = (type, id, price) => {
+if (coins < price) return;
+const nc = coins - price;
+setCoins(nc); store(“coins”, nc);
+if (type === “skin”) {
+const nu = […unlockedSkins, id]; setUnlocked(nu); store(“unlockedSkins”, nu);
+} else {
+const nu = […unlockedSound, id]; setUSound(nu); store(“unlockedSound”, nu);
+}
+};
+const activate = (type, id) => {
+if (type === “skin”) { setActiveSkin(id); store(“activeSkin”, id); }
+else { setActiveSound(id); store(“activeSound”, id); }
+};
+
+return (
+<div style={st.root}>
+<style>{css}</style>
+<div style={st.bg} />
+<div style={st.shopWrap}>
+<div style={st.shopHeader}>
+<button style={st.backBtn} onClick={onBack}>← Volver</button>
+<span style={st.shopTitle}>🛍️ Tienda</span>
+<span style={st.coinsDisplay}>🪙 {coins}</span>
+</div>
+<div style={st.shopSection}>Skins de Burbuja</div>
+<div style={st.shopGrid}>
+{Object.entries(SKINS).map(([id, skin]) => {
+const owned = unlockedSkins.includes(id);
+const active = activeSkin === id;
+return (
+<div key={id} style={{…st.shopCard, …(active ? st.shopCardActive : {})}}>
+<div style={{ fontSize:32 }}>{skin.emoji}</div>
+<div style={st.shopItemName}>{skin.name}</div>
+<div style={{ width:44, height:44, borderRadius:“50%”, background: skin.gradient, margin:“4px auto”,
+boxShadow:`0 3px 10px ${skin.glow}` }} />
+{active ? <div style={st.shopActive}>✓ Activa</div>
+: owned ? <button style={st.shopBtnSec} onClick={() => activate(“skin”, id)}>Usar</button>
+: <button style={{...st.shopBtnBuy, opacity: coins >= skin.price ? 1 : 0.5}}
+onClick={() => buy(“skin”, id, skin.price)}>🪙 {skin.price}</button>}
+</div>
+);
+})}
+</div>
+<div style={st.shopSection}>Skins de Sonido</div>
+<div style={st.shopGrid}>
+{Object.entries(SOUND_SKINS).map(([id, sk]) => {
+const owned = unlockedSound.includes(id);
+const active = activeSound === id;
+return (
+<div key={id} style={{…st.shopCard, …(active ? st.shopCardActive : {})}}>
+<div style={{ fontSize:32 }}>{sk.emoji}</div>
+<div style={st.shopItemName}>{sk.name}</div>
+{active ? <div style={st.shopActive}>✓ Activo</div>
+: owned ? <button style={st.shopBtnSec} onClick={() => activate(“sound”, id)}>Usar</button>
+: <button style={{...st.shopBtnBuy, opacity: coins >= sk.price ? 1 : 0.5}}
+onClick={() => buy(“sound”, id, sk.price)}>🪙 {sk.price}</button>}
+</div>
+);
+})}
+</div>
+<div style={st.shopNote}>Ganas 🪙 reventando burbujas</div>
+</div>
+</div>
+);
 }
 
-// ─────────────────────────────────────────────────────
-// CONTROLS
-// ─────────────────────────────────────────────────────
-document.getElementById('btn-search').addEventListener('click',()=>{
-  const q=document.getElementById('q').value.trim(); document.getElementById('q').blur(); loadTray(q);
+// ═══════════════════════════════════════════════════════════════════════════════
+// SETTINGS SCREEN
+// ═══════════════════════════════════════════════════════════════════════════════
+function SettingsScreen({ onBack }) {
+const [musicOn, setMusicOn] = useState(() => load(“cfg_music”, true));
+const [soundOn, setSoundOn] = useState(() => load(“cfg_sound”, true));
+
+const toggle = (key, val, setter) => {
+setter(val); store(key, val);
+};
+
+const Row = ({ label, emoji, value, onToggle }) => (
+<div style={st.settingRow}>
+<span style={{ fontSize:24 }}>{emoji}</span>
+<span style={st.settingLabel}>{label}</span>
+<div style={{ …st.toggle, background: value ? “#4a6fe8” : “#d0d8e8” }} onClick={() => onToggle(!value)}>
+<div style={{ …st.toggleKnob, transform: value ? “translateX(22px)” : “translateX(2px)” }} />
+</div>
+</div>
+);
+
+return (
+<div style={st.root}>
+<style>{css}</style>
+<div style={st.bg} />
+<div style={st.shopWrap}>
+<div style={st.shopHeader}>
+<button style={st.backBtn} onClick={onBack}>← Volver</button>
+<span style={st.shopTitle}>⚙️ Configuración</span>
+<span />
+</div>
+<Row label=“Música” emoji=“🎵” value={musicOn} onToggle={v => toggle(“cfg_music”, v, setMusicOn)} />
+<Row label=“Sonido de burbujas” emoji=“🔊” value={soundOn} onToggle={v => toggle(“cfg_sound”, v, setSoundOn)} />
+<div style={{ fontSize:12, color:”#9aaace”, textAlign:“center”, marginTop:8 }}>
+Los cambios aplican en la próxima partida
+</div>
+</div>
+</div>
+);
+}
+function StatsScreen({ onBack }) {
+const stats = load(“stats”, { totalPopped:0, maxCombo:0, sheetsCompleted:0, streakActivated:0, gamesPlayed:0 });
+const hsInf  = load(“hs_infinite”, 0);
+const hsTime = load(“hs_time”, 0);
+const rows = [
+[“🫧”, “Burbujas totales”,    stats.totalPopped],
+[“🔥”, “Combo máximo”,         stats.maxCombo],
+[“📄”, “Hojas completadas”,    stats.sheetsCompleted],
+[“⚡”, “Rachas activadas”,     stats.streakActivated],
+[“🎮”, “Partidas jugadas”,     stats.gamesPlayed],
+[“♾️”, “Récord Infinito”,      hsInf + “ pts”],
+[“⏱️”, “Récord Contrarreloj”,  hsTime + “ pts”],
+];
+return (
+<div style={st.root}>
+<style>{css}</style>
+<div style={st.bg} />
+<div style={st.shopWrap}>
+<div style={st.shopHeader}>
+<button style={st.backBtn} onClick={onBack}>← Volver</button>
+<span style={st.shopTitle}>📊 Estadísticas</span>
+<span />
+</div>
+{rows.map(([emoji, label, val]) => (
+<div key={label} style={st.statRow}>
+<span style={st.statEmoji}>{emoji}</span>
+<span style={st.statLabel}>{label}</span>
+<span style={st.statVal}>{val}</span>
+</div>
+))}
+</div>
+</div>
+);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ACHIEVEMENTS SCREEN
+// ═══════════════════════════════════════════════════════════════════════════════
+function AchievementsScreen({ onBack }) {
+const stats       = load(“stats”, {});
+const unlockedAch = load(“achievements”, []);
+return (
+<div style={st.root}>
+<style>{css}</style>
+<div style={st.bg} />
+<div style={st.shopWrap}>
+<div style={st.shopHeader}>
+<button style={st.backBtn} onClick={onBack}>← Volver</button>
+<span style={st.shopTitle}>🏅 Logros</span>
+<span style={st.coinsDisplay}>{unlockedAch.length}/{ACHIEVEMENTS.length}</span>
+</div>
+{ACHIEVEMENTS.map(a => {
+const done = unlockedAch.includes(a.id);
+return (
+<div key={a.id} style={{…st.achRow, opacity: done ? 1 : 0.4}}>
+<span style={{ fontSize:28 }}>{done ? a.emoji : “🔒”}</span>
+<div>
+<div style={st.achRowName}>{a.name}</div>
+<div style={st.achRowDesc}>{a.desc}</div>
+</div>
+{done && <span style={st.achDone}>✓</span>}
+</div>
+);
+})}
+</div>
+</div>
+);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SHARED GAME LOGIC HOOK
+// ═══════════════════════════════════════════════════════════════════════════════
+function useGameLogic(soundSkin) {
+const playSound = useSound(soundSkin);
+const [toastAch, setToastAch] = useState(null);
+
+const updateStats = useCallback((patch) => {
+const prev = load(“stats”, { totalPopped:0, maxCombo:0, sheetsCompleted:0, streakActivated:0, gamesPlayed:0 });
+const next = { …prev };
+for (const [k,v] of Object.entries(patch)) {
+if (k === “maxCombo”) next[k] = Math.max(next[k]||0, v);
+else next[k] = (next[k]||0) + v;
+}
+store(“stats”, next);
+// Check achievements
+const unlocked = load(“achievements”, []);
+const newUnlocked = […unlocked];
+const unlockedSkins = load(“unlockedSkins”, [“classic”]);
+for (const a of ACHIEVEMENTS) {
+if (!newUnlocked.includes(a.id) && a.check({ …next, unlockedSkins })) {
+newUnlocked.push(a.id);
+setToastAch(a);
+haptic(“heavy”);
+}
+}
+if (newUnlocked.length !== unlocked.length) store(“achievements”, newUnlocked);
+// Coins: 1 per 10 popped
+if (patch.totalPopped) {
+const coins = load(“coins”, 0);
+store(“coins”, coins + Math.floor(patch.totalPopped / 10));
+}
+}, []);
+
+return { playSound, updateStats, toastAch, setToastAch };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// CONFETTI LAYER
+// ═══════════════════════════════════════════════════════════════════════════════
+function ConfettiLayer({ confetti }) {
+return confetti.map(c => (
+<div key={c.id} className=“confettiPiece” style={{
+position:“fixed”, top:”-20px”, left:`${c.x}%`, zIndex:100,
+width: c.shape===“rect” ? c.size : c.size,
+height: c.shape===“rect” ? c.size*0.4 : c.size,
+borderRadius: c.shape===“circle” ? “50%” : “2px”,
+background: c.color,
+animationDelay:`${c.delay}s`, animationDuration:`${c.duration}s`,
+“–drift”:`${c.drift}px`, “–rot”:`${c.rot}deg`,
+pointerEvents:“none”,
+}} />
+));
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ZEN MUSIC (Web Audio generative)
+// ═══════════════════════════════════════════════════════════════════════════════
+function useZenMusic() {
+const actx = useRef(null);
+const nodes = useRef([]);
+const started = useRef(false);
+const ivRef = useRef(null);
+const nextTimeRef = useRef(0);
+
+const start = useCallback(() => {
+if (started.current) return;
+try {
+if (!actx.current) actx.current = new (window.AudioContext || window.webkitAudioContext)();
+const ac = actx.current;
+started.current = true;
+
+```
+  const notes = [261.63, 293.66, 329.63, 392.00, 440.00, 523.25, 587.33];
+
+  const playNote = (freq, time, dur, vol = 0.14) => {
+    const osc = ac.createOscillator(); const g = ac.createGain();
+    const delay = ac.createDelay(2); delay.delayTime.value = 0.35;
+    const dg = ac.createGain(); dg.gain.value = 0.3;
+    osc.connect(g); g.connect(ac.destination);
+    g.connect(delay); delay.connect(dg); dg.connect(ac.destination);
+    osc.type = "sine"; osc.frequency.value = freq;
+    g.gain.setValueAtTime(0, time);
+    g.gain.linearRampToValueAtTime(vol, time + 0.08);
+    g.gain.exponentialRampToValueAtTime(0.001, time + dur);
+    osc.start(time); osc.stop(time + dur + 0.1);
+    nodes.current.push(osc);
+  };
+
+  const scheduleLoop = (startTime) => {
+    const pattern = [0, 2, 4, 1, 3, 4, 2, 0];
+    let t = startTime;
+    pattern.forEach((ni, i) => {
+      const note = notes[ni % notes.length];
+      playNote(note, t, 2.2, 0.13);
+      if (i % 3 === 0) playNote(note * 1.5, t + 0.1, 2.0, 0.06);
+      t += 1.8;
+    });
+    // Drone
+    const drone = ac.createOscillator(); const dg = ac.createGain();
+    drone.connect(dg); dg.connect(ac.destination);
+    drone.type = "sine"; drone.frequency.value = 65;
+    dg.gain.setValueAtTime(0.08, startTime);
+    dg.gain.linearRampToValueAtTime(0.1, startTime + 4);
+    dg.gain.linearRampToValueAtTime(0.08, t);
+    drone.start(startTime); drone.stop(t + 0.5);
+    nodes.current.push(drone);
+    return t;
+  };
+
+  nextTimeRef.current = ac.currentTime + 0.05;
+  nextTimeRef.current = scheduleLoop(nextTimeRef.current);
+
+  ivRef.current = setInterval(() => {
+    if (!actx.current || !started.current) return;
+    while (nextTimeRef.current < ac.currentTime + 2.0) {
+      nextTimeRef.current = scheduleLoop(nextTimeRef.current);
+    }
+  }, 500);
+} catch {}
+```
+
+}, []);
+
+const stop = useCallback(() => {
+try {
+clearInterval(ivRef.current);
+nodes.current.forEach(n => { try { n.stop(); } catch {} });
+nodes.current = [];
+started.current = false;
+if (actx.current) { actx.current.close(); actx.current = null; }
+} catch {}
+}, []);
+
+return { start, stop };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// URGENT MUSIC — faster, tense, for time attack
+// ═══════════════════════════════════════════════════════════════════════════════
+function useUrgentMusic() {
+const actx = useRef(null);
+const nodes = useRef([]);
+const started = useRef(false);
+const ivRef = useRef(null);
+const nextTimeRef = useRef(0);
+
+const start = useCallback(() => {
+if (started.current) return;
+try {
+if (!actx.current) actx.current = new (window.AudioContext || window.webkitAudioContext)();
+const ac = actx.current;
+started.current = true;
+
+```
+  const notes = [220, 261.63, 311.13, 349.23, 392, 440, 523.25];
+
+  const playNote = (freq, time, dur, vol = 0.18, type = "triangle") => {
+    const osc = ac.createOscillator();
+    const g = ac.createGain();
+    osc.connect(g); g.connect(ac.destination);
+    osc.type = type; osc.frequency.value = freq;
+    g.gain.setValueAtTime(0, time);
+    g.gain.linearRampToValueAtTime(vol, time + 0.03);
+    g.gain.exponentialRampToValueAtTime(0.001, time + dur);
+    osc.start(time); osc.stop(time + dur + 0.05);
+    nodes.current.push(osc);
+  };
+
+  const playBass = (time, dur) => {
+    const osc = ac.createOscillator(); const g = ac.createGain();
+    osc.connect(g); g.connect(ac.destination);
+    osc.type = "sine"; osc.frequency.value = 82;
+    g.gain.setValueAtTime(0.22, time);
+    g.gain.exponentialRampToValueAtTime(0.001, time + dur);
+    osc.start(time); osc.stop(time + dur + 0.02);
+    nodes.current.push(osc);
+  };
+
+  // Returns duration of one loop pass
+  const scheduleLoop = (startTime) => {
+    const pattern = [0, 2, 1, 3, 2, 4, 3, 5, 4, 2, 1, 3];
+    let t = startTime;
+    pattern.forEach((ni, i) => {
+      const freq = notes[ni % notes.length];
+      playNote(freq, t, 0.35, 0.16);
+      if (i % 4 === 0) playNote(freq * 2, t + 0.18, 0.18, 0.08);
+      if (i % 2 === 0) playBass(t, 0.22);
+      t += 0.38;
+    });
+    return t;
+  };
+
+  nextTimeRef.current = ac.currentTime + 0.05;
+  // Schedule first loop immediately
+  nextTimeRef.current = scheduleLoop(nextTimeRef.current);
+
+  // Use short interval (200ms) to keep scheduling ahead continuously
+  ivRef.current = setInterval(() => {
+    if (!actx.current || !started.current) return;
+    const lookahead = 1.0; // schedule 1s ahead
+    while (nextTimeRef.current < ac.currentTime + lookahead) {
+      nextTimeRef.current = scheduleLoop(nextTimeRef.current);
+    }
+  }, 200);
+} catch {}
+```
+
+}, []);
+
+const stop = useCallback(() => {
+try {
+clearInterval(ivRef.current);
+nodes.current.forEach(n => { try { n.stop(); } catch {} });
+nodes.current = [];
+started.current = false;
+if (actx.current) { actx.current.close(); actx.current = null; }
+} catch {}
+}, []);
+
+return { start, stop };
+}
+function ChillMode({ onHome, skin, soundSkin }) {
+const VISIBLE_ROWS = 12, BATCH = 6;
+const [rows, setRows]         = useState(() => makeRows(VISIBLE_ROWS + BATCH));
+const [score, setScore]       = useState(0);
+const [hs, setHs]             = useState(() => load(“hs_chill”, 0));
+const [splashes, setSplashes] = useState([]);
+const [combo, setCombo]       = useState(0);
+const [musicOn, setMusicOn]   = useState(true);
+const scrollRef = useRef(null), sheetRef = useRef(null);
+const comboRef = useRef(0), comboTimer = useRef(null);
+const scoreRef = useRef(0);
+const { playSound, updateStats, toastAch, setToastAch } = useGameLogic(soundSkin);
+const { start: startMusic, stop: stopMusic } = useZenMusic();
+const displayScore = useAnimatedScore(score);
+const currentSkin = SKINS[skin] || SKINS.classic;
+
+useEffect(() => { scoreRef.current = score; }, [score]);
+// Start music immediately on mount
+useEffect(() => { startMusic(); return () => stopMusic(); }, []);
+
+const toggleMusic = () => {
+if (musicOn) { stopMusic(); setMusicOn(false); }
+else { startMusic(); setMusicOn(true); }
+};
+
+const handleScroll = useCallback(() => {
+const el = scrollRef.current;
+if (!el) return;
+if (el.scrollHeight - el.scrollTop - el.clientHeight < 200)
+setRows(prev => […prev, …makeRows(BATCH)]);
+}, []);
+
+const popBubble = useCallback((rowIdx, colIdx, cx, cy) => {
+setRows(prev => {
+if (prev[rowIdx]?.[colIdx]?.popped) return prev;
+const next = prev.map(r => […r]);
+next[rowIdx][colIdx] = { …next[rowIdx][colIdx], popped: true };
+return next;
 });
-document.getElementById('btn-refresh').addEventListener('click',()=>{
-  document.getElementById('q').value=''; loadTray('');
-});
-document.getElementById('q').addEventListener('keydown',e=>{ if(e.key==='Enter') document.getElementById('btn-search').click(); });
-document.getElementById('btn-undo').addEventListener('click',()=>{
-  if (!undoStack.length) return; items=items.filter(p=>p.id!==undoStack.pop()); updateUI(); redraw();
-});
-document.getElementById('btn-save').addEventListener('click',()=>{
-  if (!items.length) return;
-  const out=document.createElement('canvas'); out.width=cvs.width; out.height=cvs.height;
-  out.getContext('2d').drawImage(cvs,0,0);
-  const a=document.createElement('a'); a.download=`collage-${Date.now()}.png`; a.href=out.toDataURL('image/png'); a.click();
-});
+const ns = scoreRef.current + 1;
+setScore(ns);
+if (ns > load(“hs_chill”, 0)) { store(“hs_chill”, ns); setHs(ns); }
+comboRef.current += 1;
+const c = comboRef.current;
+setCombo(c);
+if (comboTimer.current) clearTimeout(comboTimer.current);
+comboTimer.current = setTimeout(() => { comboRef.current = 0; setCombo(0); }, 600);
+haptic(“light”);
+playSound(c);
+updateStats({ totalPopped: 1, maxCombo: c });
+const sp = makeSplash(cx, cy);
+setSplashes(s => […s, …sp]);
+setTimeout(() => setSplashes(s => s.filter(x => !sp.find(n => n.id === x.id))), 500);
+}, [playSound, updateStats]);
 
-// ─────────────────────────────────────────────────────
-// INIT
-// ─────────────────────────────────────────────────────
-resize();
-loadTray();
-updateUI();
-</script>
+const BS = Math.min(Math.floor(340 / (COLS + 0.5)), 52);
+const ODD = BS * 0.5, RH = BS * 1.05;
 
-</body>
-</html>
+return (
+<div style={st.root}>
+<style>{css}</style>
+{/* Zen calm gradient background */}
+<div style={{ …st.bg, background: “linear-gradient(160deg, #e8f5e9 0%, #e3f2fd 35%, #f3e5f5 65%, #e0f7fa 100%)” }} />
+{/* Soft floating orbs for atmosphere */}
+<div style={{ position:“fixed”, top:“10%”, left:“5%”, width:120, height:120, borderRadius:“50%”, background:“radial-gradient(circle, rgba(200,230,200,0.25), transparent 70%)”, pointerEvents:“none”, zIndex:0 }} />
+<div style={{ position:“fixed”, bottom:“15%”, right:“8%”, width:160, height:160, borderRadius:“50%”, background:“radial-gradient(circle, rgba(180,210,240,0.2), transparent 70%)”, pointerEvents:“none”, zIndex:0 }} />
+<div style={{ position:“fixed”, top:“40%”, right:“3%”, width:80, height:80, borderRadius:“50%”, background:“radial-gradient(circle, rgba(220,200,240,0.2), transparent 70%)”, pointerEvents:“none”, zIndex:0 }} />
+
+```
+  {toastAch && <AchievementToast achievement={toastAch} onDone={() => setToastAch(null)} />}
+  <div style={st.wrap}>
+    <div style={st.header}>
+      <button style={st.backBtn} onClick={onHome}>← Inicio</button>
+      <span style={{ ...st.modeTag, color:"#5a8a6a" }}>🍃 Chill</span>
+      <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+        <button onClick={toggleMusic} style={{ background:"none", border:"none", fontSize:18, cursor:"pointer", opacity: musicOn ? 1 : 0.45 }} title={musicOn ? "Apagar música" : "Encender música"}>
+          {musicOn ? "🔊" : "🔇"}
+        </button>
+        <div style={st.headerScore}><span style={{ ...st.headerScoreNum, color:"#5a8a6a" }}>{displayScore}</span><span style={st.headerScoreSub}>pts</span></div>
+      </div>
+    </div>
+    {hs > 0 && <div style={{ ...st.bestRow, color:"#7aaa8a" }}>🏆 récord: {hs}</div>}
+    <div style={{ position:"relative", width:"100%", flex:1, display:"flex", flexDirection:"column" }}>
+      {combo >= 3 && <div style={{ ...st.comboOverlay, background:"rgba(230,245,235,0.9)", color:"#3a8a5a" }}>🌿 ×{combo}</div>}
+      <div ref={scrollRef} style={{ ...st.scrollSheet, border:"1px solid rgba(150,200,170,0.4)", background:"rgba(200,225,210,0.32)", height:"calc(100vh - 120px)" }} onScroll={handleScroll}>
+        <div ref={sheetRef} style={{ position:"relative" }}>
+          {splashes.map(sp => (
+            <div key={sp.id} className="splash" style={{ position:"absolute", zIndex:10, pointerEvents:"none", left:sp.cx, top:sp.cy, width:sp.size, height:sp.size, borderRadius:"50%", background:"rgba(180,220,200,0.75)", "--vx":`${sp.vx}px`, "--vy":`${sp.vy}px`, transform:"translate(-50%,-50%)" }} />
+          ))}
+          <div style={{ padding:"8px 6px 12px" }}>
+            {rows.map((row, ri) => (
+              <div key={ri} style={{ display:"flex", justifyContent:"center", marginLeft: ri%2===1 ? ODD : 0, marginTop: ri===0 ? 0 : BS*0.08, height:RH, alignItems:"center" }}>
+                {row.map((b, ci) => (
+                  <BubbleCell key={b.uid} bubble={b} bubbleSize={BS} sheetRef={sheetRef} skin={currentSkin}
+                    onPop={(cx,cy) => popBubble(ri, ci, cx, cy)} refilling={false} />
+                ))}
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+```
+
+);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// TIME ATTACK MODE
+// ═══════════════════════════════════════════════════════════════════════════════
+function TimeAttackMode({ onHome, skin, soundSkin }) {
+const [lv, setLv]               = useState(LEVELS[0]);
+const [rows, setRows]           = useState(() => makeRows(LEVELS[0].rows));
+const [poppedCount, setPoppedCount] = useState(0);
+const [score, setScore]         = useState(0);
+const [timeLeft, setTimeLeft]   = useState(BASE_TIME);
+const [gameState, setGameState] = useState(“playing”); // start immediately
+const [hs, setHsState]          = useState(() => load(“hs_time”, 0));
+const [combo, setCombo]         = useState(0);
+const [streak, setStreak]       = useState(false);
+const [confetti, setConfetti]   = useState([]);
+const [finalScore, setFinalScore] = useState(0);
+const [splashes, setSplashes]   = useState([]);
+const [levelUpMsg, setLevelUpMsg] = useState(false);
+
+const comboRef = useRef(0), comboTimer = useRef(null);
+const gsRef = useRef(“playing”), scoreRef = useRef(0), lvRef = useRef(LEVELS[0]);
+const streakRef = useRef(0), poppedRef = useRef(0);
+const scrollRef = useRef(null), sheetRef = useRef(null);
+const { playSound, updateStats, toastAch, setToastAch } = useGameLogic(soundSkin);
+const { start: startUrgent, stop: stopUrgent } = useUrgentMusic();
+const displayScore = useAnimatedScore(score);
+const currentSkin = SKINS[skin] || SKINS.classic;
+
+useEffect(() => { gsRef.current = gameState; }, [gameState]);
+useEffect(() => { scoreRef.current = score; }, [score]);
+useEffect(() => { lvRef.current = lv; }, [lv]);
+useEffect(() => { poppedRef.current = poppedCount; }, [poppedCount]);
+// Start urgent music immediately
+useEffect(() => { startUrgent(); return () => stopUrgent(); }, []);
+
+// Timer — resets each level
+useEffect(() => {
+if (gameState !== “playing”) return;
+const iv = setInterval(() => {
+setTimeLeft(t => {
+if (t <= 1) {
+clearInterval(iv);
+const s = scoreRef.current;
+setFinalScore(s);
+if (s > load(“hs_time”,0)) { store(“hs_time”,s); setHsState(s); }
+updateStats({ gamesPlayed:1 });
+stopUrgent();
+setGameState(“lost”);
+return 0;
+}
+return t - 1;
+});
+}, 1000);
+return () => clearInterval(iv);
+}, [gameState, lv]); // re-fires when lv changes → timer resets
+
+// All popped → next level
+useEffect(() => {
+if (gameState !== “playing”) return;
+const total = lvRef.current.rows * COLS;
+if (poppedCount < total) return;
+updateStats({ sheetsCompleted: 1 });
+const currentLv = lvRef.current;
+const isLast = currentLv.level >= LEVELS[LEVELS.length-1].level;
+if (isLast) {
+const s = scoreRef.current;
+setFinalScore(s);
+if (s > load(“hs_time”,0)) { store(“hs_time”,s); setHsState(s); }
+setConfetti(makeConfetti());
+updateStats({ gamesPlayed:1 });
+stopUrgent();
+setGameState(“won”);
+} else {
+const newLv = LEVELS[currentLv.level]; // next level (0-indexed by level-1)
+setLevelUpMsg(true);
+setTimeout(() => setLevelUpMsg(false), 1200);
+// Reset timer with +1s bonus for this level
+setTimeLeft(BASE_TIME + newLv.level - 1);
+setLv(newLv); lvRef.current = newLv;
+setRows(makeRows(newLv.rows));
+setPoppedCount(0); poppedRef.current = 0;
+// Scroll back to top
+if (scrollRef.current) scrollRef.current.scrollTop = 0;
+haptic(“medium”);
+}
+}, [poppedCount, gameState]);
+
+const handleScroll = useCallback(() => {
+const el = scrollRef.current;
+if (!el) return;
+if (el.scrollHeight - el.scrollTop - el.clientHeight < 200)
+setRows(prev => […prev, …makeRows(4)]);
+}, []);
+
+const startGame = () => {
+const l = LEVELS[0]; setLv(l); lvRef.current = l;
+setRows(makeRows(l.rows));
+setPoppedCount(0); poppedRef.current = 0;
+setScore(0); scoreRef.current = 0;
+setFinalScore(0); setTimeLeft(BASE_TIME);
+setCombo(0); comboRef.current = 0; streakRef.current = 0;
+setConfetti([]); setSplashes([]);
+setLevelUpMsg(false); setStreak(false);
+stopUrgent();
+setTimeout(() => { startUrgent(); }, 50);
+setGameState(“playing”);
+};
+
+const popBubble = useCallback((rowIdx, colIdx, cx, cy) => {
+if (gsRef.current !== “playing”) return;
+setRows(prev => {
+if (prev[rowIdx]?.[colIdx]?.popped) return prev;
+const next = prev.map(r => […r]);
+next[rowIdx][colIdx] = { …next[rowIdx][colIdx], popped: true };
+return next;
+});
+setPoppedCount(c => c+1);
+setScore(s => s+1);
+comboRef.current += 1;
+const c = comboRef.current;
+setCombo(c);
+if (comboTimer.current) clearTimeout(comboTimer.current);
+comboTimer.current = setTimeout(() => { comboRef.current=0; setCombo(0); streakRef.current=0; setStreak(false); }, 600);
+streakRef.current += 1;
+if (streakRef.current >= STREAK_THRESHOLD && !streak) { setStreak(true); haptic(“medium”); }
+haptic(“light”);
+playSound(c);
+updateStats({ totalPopped:1, maxCombo:c });
+const sp = makeSplash(cx, cy);
+setSplashes(s => […s, …sp]);
+setTimeout(() => setSplashes(s => s.filter(x => !sp.find(n => n.id===x.id))), 500);
+}, [playSound, updateStats, streak]);
+
+const timerColor = timeLeft<=5 ? “#e84040” : timeLeft<=10 ? “#e88020” : “#4a80e8”;
+const levelTime = BASE_TIME + lv.level - 1;
+const pct = timeLeft / levelTime;
+const BS = Math.min(Math.floor(340/(COLS+0.5)),52);
+const ODD = BS*0.5, RH = BS*1.05;
+
+return (
+<div style={st.root}>
+<style>{css}</style>
+<div style={{ …st.bg, background: streak ? “linear-gradient(150deg,#ffe8f0 0%,#fff0e8 50%,#ffe8ff 100%)” : “linear-gradient(150deg,#dff0ff 0%,#f0e4ff 55%,#e4fff0 100%)”, transition:“background 1s” }} />
+<ConfettiLayer confetti={confetti} />
+{toastAch && <AchievementToast achievement={toastAch} onDone={() => setToastAch(null)} />}
+<div style={st.wrap}>
+<div style={st.header}>
+<button style={st.backBtn} onClick={onHome}>← Inicio</button>
+<span style={st.modeTag}>⚡ Challenge {streak?“🔥”:””}</span>
+<div style={st.headerScore}><span style={st.headerScoreNum}>{displayScore}</span><span style={st.headerScoreSub}>pts</span></div>
+</div>
+{hs > 0 && <div style={st.bestRow}>🏆 récord: {hs}</div>}
+
+```
+    <div style={st.hud}>
+      <div style={st.hudBlock}>
+        <span style={{ ...st.hudBig, color: combo>=3 ? "#e040a0" : "#4a6fe8" }}>{combo>=2 ? `×${combo}` : `Nv.${lv.level}`}</span>
+        <span style={st.hudSub}>{combo>=2 ? "combo" : "nivel"}</span>
+      </div>
+      <div style={st.timerWrap}>
+        <svg viewBox="0 0 56 56" style={st.timerSvg}>
+          <circle cx="28" cy="28" r="23" style={st.trackCircle} />
+          <circle cx="28" cy="28" r="23" style={{ ...st.arcCircle, stroke:timerColor, strokeDashoffset:`${144.5*(1-Math.min(pct,1))}`, transition:"stroke-dashoffset 0.95s linear, stroke 0.4s" }} />
+        </svg>
+        <span style={{ ...st.timerNum, color:timerColor, animation: timeLeft<=5 ? "timerPulse 0.5s ease-in-out infinite" : "none" }}>{timeLeft}</span>
+      </div>
+      <div style={st.hudBlock}>
+        <span style={{ ...st.hudBig, color:"#4a6fe8" }}>{lv.rows*COLS - poppedCount}</span>
+        <span style={st.hudSub}>quedan</span>
+      </div>
+    </div>
+
+    {levelUpMsg && (
+      <div style={{ ...st.levelBadge, ...st.levelBadgeUp }}>
+        ⬆️ Nivel {lv.level} · {BASE_TIME + lv.level - 1}s
+      </div>
+    )}
+
+    {/* Sheet + result overlay stacked */}
+    <div style={{ position:"relative", width:"100%", flex:1, display:"flex", flexDirection:"column" }}>
+      {combo >= 3 && <div style={st.comboOverlay}>🔥 ×{combo}</div>}
+      <div ref={scrollRef} style={{ ...st.scrollSheet, height:"calc(100vh - 185px)" }} onScroll={handleScroll}>
+        <div ref={sheetRef} style={{ position:"relative" }}>
+          {splashes.map(sp => (
+            <div key={sp.id} className="splash" style={{ position:"absolute", zIndex:10, pointerEvents:"none", left:sp.cx, top:sp.cy, width:sp.size, height:sp.size, borderRadius:"50%", background:"rgba(190,215,240,0.85)", "--vx":`${sp.vx}px`, "--vy":`${sp.vy}px`, transform:"translate(-50%,-50%)" }} />
+          ))}
+          <div style={{ padding:"8px 6px 12px" }}>
+            {rows.map((row, ri) => (
+              <div key={ri} style={{ display:"flex", justifyContent:"center", marginLeft: ri%2===1 ? ODD : 0, marginTop: ri===0 ? 0 : BS*0.08, height:RH, alignItems:"center" }}>
+                {row.map((b, ci) => (
+                  <BubbleCell key={b.uid} bubble={b} bubbleSize={BS} sheetRef={sheetRef} skin={currentSkin}
+                    onPop={(cx,cy) => popBubble(ri, ci, cx, cy)} refilling={false} />
+                ))}
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Result overlays — on top of bubbles */}
+      {gameState === "won" && (
+        <div style={st.resultOverlay}>
+          <div style={st.resultEmoji}>🎉</div>
+          <div style={{ ...st.overTitle, color:"#1a7a40" }}>¡GANASTE!</div>
+          <div style={st.overScore}>{finalScore}</div>
+          <div style={st.overSub}>puntos · nivel {lv.level}</div>
+          {finalScore === hs && finalScore > 0 && <div style={st.newBest}>🏆 ¡Nuevo récord!</div>}
+          <button style={{ ...st.btn, background:"linear-gradient(135deg,#40d080,#20a050)" }} onClick={startGame}>Otra vez</button>
+          <button style={{ ...st.btnSec }} onClick={onHome}>Inicio</button>
+        </div>
+      )}
+      {gameState === "lost" && (
+        <div style={st.resultOverlay}>
+          <div style={st.resultEmoji}>⏱️</div>
+          <div style={{ ...st.overTitle, color:"#b02020" }}>¡Tiempo!</div>
+          <div style={st.overScore}>{finalScore}</div>
+          <div style={st.overSub}>puntos · nivel {lv.level}</div>
+          {finalScore === hs && finalScore > 0 && <div style={st.newBest}>🏆 ¡Nuevo récord!</div>}
+          <button style={{ ...st.btn, background:"linear-gradient(135deg,#f06060,#c02828)" }} onClick={startGame}>Otra vez</button>
+          <button style={{ ...st.btnSec }} onClick={onHome}>Inicio</button>
+        </div>
+      )}
+    </div>
+  </div>
+</div>
+```
+
+);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// BUBBLE CELL
+// ═══════════════════════════════════════════════════════════════════════════════
+function BubbleCell({ bubble, bubbleSize, onPop, sheetRef, refilling, skin }) {
+const { shineX, shineY, floatDelay, floatDuration, popped } = bubble;
+const [state, setState] = useState(popped ? “broken” : “intact”);
+const cellRef = useRef(null);
+
+useEffect(() => {
+if (refilling && state === “broken”) {
+const t = setTimeout(() => setState(“intact”), Math.random()*300);
+return () => clearTimeout(t);
+}
+}, [refilling]);
+useEffect(() => { if (!refilling) setState(popped ? “broken” : “intact”); }, [popped]);
+
+const getCenter = () => {
+if (!cellRef.current || !sheetRef.current) return { cx:0, cy:0 };
+const cr = cellRef.current.getBoundingClientRect();
+const sr = sheetRef.current.getBoundingClientRect();
+return { cx: cr.left - sr.left + cr.width/2, cy: cr.top - sr.top + cr.height/2 };
+};
+
+const handleDown = (e) => { e.preventDefault(); if (state===“intact”) setState(“pressing”); };
+const handleUp   = (e) => {
+e.preventDefault();
+if (state !== “pressing”) return;
+setState(“popping”);
+const { cx, cy } = getCenter();
+onPop(cx, cy);
+setTimeout(() => setState(“broken”), 380);
+};
+
+const sz = bubbleSize;
+const s = skin || SKINS.classic;
+
+return (
+<div ref={cellRef}
+style={{ width:sz, height:sz, flexShrink:0, display:“flex”, alignItems:“center”, justifyContent:“center”, cursor: state===“intact”||state===“pressing” ? “pointer” : “default”, position:“relative”, overflow:“visible” }}
+onPointerDown={handleDown} onPointerUp={handleUp}
+onPointerLeave={() => { if (state===“pressing”) setState(“intact”); }}>
+
+```
+  {(state==="intact"||state==="pressing") && (
+    <div style={{
+      position:"relative", width:"92%", height:"92%",
+      transform: state==="pressing" ? "scale(0.78) scaleY(0.70)" : "scale(1)",
+      transition: state==="pressing" ? "transform 0.06s ease-out" : "transform 0.15s cubic-bezier(.34,1.56,.64,1)",
+      animation: state==="pressing" ? "none" : `bubbleFloat ${floatDuration}s ${floatDelay}s ease-in-out infinite`,
+      filter: state==="pressing" ? "brightness(1.25) saturate(1.5)" : "none",
+      willChange:"transform",
+    }}>
+      <div style={{ position:"absolute", inset:0, borderRadius:"50%", background: s.gradient, boxShadow: state==="pressing" ? `0 1px 4px rgba(60,100,140,0.4), 0 0 0 2.5px rgba(140,200,245,0.7)` : `0 3px 10px ${s.glow}, 0 1px 2px rgba(0,0,0,0.08), inset 0 -2px 5px rgba(60,100,150,0.15)` }} />
+      {state==="pressing" && <div style={{ position:"absolute", inset:"-12%", borderRadius:"50%", border:"2px solid rgba(140,200,245,0.55)", boxShadow:"0 0 14px rgba(120,185,235,0.45)" }} />}
+      <div style={{ position:"absolute", top:`${shineY}%`, left:`${shineX}%`, width:"40%", height:"23%", background:"rgba(255,255,255,0.97)", borderRadius:"50%", transform:"rotate(-30deg)", filter:"blur(1.5px)" }} />
+      <div style={{ position:"absolute", bottom:"16%", right:"14%", width:"20%", height:"12%", background:"rgba(255,255,255,0.5)", borderRadius:"50%", filter:"blur(2px)" }} />
+      <div style={{ position:"absolute", inset:0, borderRadius:"50%", boxShadow:"inset 0 0 0 1px rgba(255,255,255,0.4), inset 0 1px 4px rgba(255,255,255,0.45)" }} />
+    </div>
+  )}
+
+  {state==="popping" && <BurstSVG />}
+  {state==="broken"  && <BrokenSVG />}
+</div>
+```
+
+);
+}
+
+function BurstSVG() {
+return (
+<div style={{ position:“absolute”, inset:”-15%”, pointerEvents:“none” }}>
+<svg viewBox=“0 0 130 130” style={{ width:“100%”, height:“100%”, overflow:“visible” }}>
+<defs>
+<radialGradient id="pf" cx="45%" cy="38%" r="65%">
+<stop offset="0%" stopColor="rgba(255,255,255,0.9)" />
+<stop offset="25%" stopColor="rgba(200,235,255,0.7)" />
+<stop offset="50%" stopColor="rgba(210,195,255,0.65)" />
+<stop offset="75%" stopColor="rgba(170,235,220,0.55)" />
+<stop offset="100%" stopColor="rgba(190,215,245,0.35)" />
+</radialGradient>
+<radialGradient id="ps" cx="60%" cy="55%" r="50%">
+<stop offset="0%" stopColor="rgba(255,210,240,0.5)" />
+<stop offset="50%" stopColor="rgba(190,240,255,0.4)" />
+<stop offset="100%" stopColor="rgba(210,255,230,0.2)" />
+</radialGradient>
+</defs>
+<g style={{ animation:“popSequence 0.38s cubic-bezier(0.25,0.46,0.45,0.94) forwards”, transformOrigin:“65px 65px” }}>
+<path d="M65,32 C78,26 92,30 95,42 C100,50 96,58 92,62 C98,68 100,80 93,86 C86,93 74,92 68,87 C62,96 50,98 41,93 C32,88 28,78 33,69 C24,64 20,52 27,43 C32,34 46,28 55,31 Z" fill="url(#pf)" stroke="rgba(200,220,248,0.6)" strokeWidth="0.8" />
+<path d="M65,32 C78,26 92,30 95,42 C100,50 96,58 92,62 C98,68 100,80 93,86 C86,93 74,92 68,87 C62,96 50,98 41,93 C32,88 28,78 33,69 C24,64 20,52 27,43 C32,34 46,28 55,31 Z" fill="url(#ps)" />
+<path d="M95,42 C102,35 106,30 103,22 C101,17 95,19 93,24" fill="none" stroke="rgba(200,225,248,0.6)" strokeWidth="1.1" strokeLinecap="round"/>
+<path d="M93,86 C100,93 102,100 98,105 C95,108 89,106 88,100" fill="none" stroke="rgba(195,222,248,0.55)" strokeWidth="1" strokeLinecap="round"/>
+<path d="M41,93 C36,102 30,107 23,104 C18,102 18,95 23,93" fill="none" stroke="rgba(200,225,248,0.5)" strokeWidth="1" strokeLinecap="round"/>
+<path d="M27,43 C18,38 12,33 10,24 C8,17 14,13 19,17" fill="none" stroke="rgba(200,225,248,0.55)" strokeWidth="1" strokeLinecap="round"/>
+<circle cx="104" cy="24" r="2.4" fill="rgba(210,232,250,0.6)"/>
+<circle cx="108" cy="31" r="1.4" fill="rgba(215,235,252,0.5)"/>
+<circle cx="100" cy="108" r="2.2" fill="rgba(210,230,250,0.55)"/>
+<circle cx="20" cy="106" r="2" fill="rgba(210,230,250,0.52)"/>
+<circle cx="13" cy="22" r="2.2" fill="rgba(210,230,250,0.55)"/>
+<circle cx="38" cy="5" r="2" fill="rgba(210,230,250,0.5)"/>
+<ellipse cx="54" cy="48" rx="11" ry="6" fill="rgba(255,255,255,0.38)" transform="rotate(-25,54,48)"/>
+<ellipse cx="76" cy="72" rx="8" ry="4" fill="rgba(255,255,255,0.25)" transform="rotate(15,76,72)"/>
+</g>
+</svg>
+</div>
+);
+}
+
+function BrokenSVG() {
+return (
+<div style={{ position:“absolute”, inset:”-15%”, pointerEvents:“none” }}>
+<svg viewBox=“0 0 130 130” style={{ width:“100%”, height:“100%”, overflow:“visible” }}>
+<defs>
+<radialGradient id="bf" cx="45%" cy="38%" r="65%">
+<stop offset="0%" stopColor="rgba(255,255,255,0.75)" />
+<stop offset="25%" stopColor="rgba(200,232,255,0.55)" />
+<stop offset="50%" stopColor="rgba(208,192,255,0.5)" />
+<stop offset="75%" stopColor="rgba(168,232,218,0.45)" />
+<stop offset="100%" stopColor="rgba(188,212,244,0.28)" />
+</radialGradient>
+<radialGradient id="bs" cx="60%" cy="55%" r="50%">
+<stop offset="0%" stopColor="rgba(255,208,238,0.38)" />
+<stop offset="50%" stopColor="rgba(188,238,255,0.32)" />
+<stop offset="100%" stopColor="rgba(208,255,228,0.18)" />
+</radialGradient>
+</defs>
+<path d="M65,32 C78,26 92,30 95,42 C100,50 96,58 92,62 C98,68 100,80 93,86 C86,93 74,92 68,87 C62,96 50,98 41,93 C32,88 28,78 33,69 C24,64 20,52 27,43 C32,34 46,28 55,31 Z" fill="url(#bf)" stroke="rgba(198,218,244,0.45)" strokeWidth="0.8" />
+<path d="M65,32 C78,26 92,30 95,42 C100,50 96,58 92,62 C98,68 100,80 93,86 C86,93 74,92 68,87 C62,96 50,98 41,93 C32,88 28,78 33,69 C24,64 20,52 27,43 C32,34 46,28 55,31 Z" fill="url(#bs)" />
+<path d="M95,42 C102,35 106,30 103,22" fill="none" stroke="rgba(198,222,246,0.5)" strokeWidth="1.1" strokeLinecap="round"/>
+<path d="M93,86 C100,93 102,100 98,105" fill="none" stroke="rgba(193,219,246,0.45)" strokeWidth="1" strokeLinecap="round"/>
+<path d="M41,93 C36,102 30,107 23,104" fill="none" stroke="rgba(198,222,246,0.42)" strokeWidth="1" strokeLinecap="round"/>
+<path d="M27,43 C18,38 12,33 10,24" fill="none" stroke="rgba(198,222,246,0.48)" strokeWidth="1" strokeLinecap="round"/>
+<circle cx="104" cy="24" r="2.4" fill="rgba(208,230,248,0.5)"/>
+<circle cx="100" cy="108" r="2.2" fill="rgba(208,228,248,0.48)"/>
+<circle cx="13" cy="22" r="2.2" fill="rgba(208,228,248,0.48)"/>
+<circle cx="38" cy="5" r="2" fill="rgba(208,228,248,0.44)"/>
+<ellipse cx="54" cy="48" rx="11" ry="6" fill="rgba(255,255,255,0.28)" transform="rotate(-25,54,48)"/>
+<ellipse cx="76" cy="72" rx="8" ry="4" fill="rgba(255,255,255,0.18)" transform="rotate(15,76,72)"/>
+</svg>
+</div>
+);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ROOT
+// ═══════════════════════════════════════════════════════════════════════════════
+export default function App() {
+const [screen, setScreen] = useState(“home”);
+const [mode, setMode]     = useState(null);
+const activeSkin  = load(“activeSkin”, “classic”);
+const activeSound = load(“activeSound”, “classic”);
+
+if (screen === “home”)         return <HomeScreen onSelect={(m) => { setMode(m); setScreen(“game”); }} onShop={() => setScreen(“shop”)} onStats={() => setScreen(“stats”)} onAchievements={() => setScreen(“achievements”)} />;
+if (screen === “shop”)         return <ShopScreen onBack={() => setScreen(“home”)} />;
+if (screen === “stats”)        return <StatsScreen onBack={() => setScreen(“home”)} />;
+if (screen === “achievements”) return <AchievementsScreen onBack={() => setScreen(“home”)} />;
+if (mode === “chill”)          return <ChillMode onHome={() => { setScreen(“home”); setMode(null); }} skin={activeSkin} soundSkin={activeSound} />;
+if (mode === “time”)           return <TimeAttackMode onHome={() => { setScreen(“home”); setMode(null); }} skin={activeSkin} soundSkin={activeSound} />;
+return null;
+}
+
+// ─── CSS ──────────────────────────────────────────────────────────────────────
+const css = `
+@import url(‘https://fonts.googleapis.com/css2?family=Nunito:wght@700;900&family=Fredoka+One&display=swap’);
+
+- { box-sizing:border-box; margin:0; padding:0; touch-action:manipulation; -webkit-tap-highlight-color:transparent; }
+  @keyframes bubbleFloat  { 0%,100% { transform:translateY(0) scale(1); } 50% { transform:translateY(-2px) scale(1.012); } }
+  @keyframes bubbleFloat3 { 0%,100% { transform:translateY(0); } 50% { transform:translateY(-8px); } }
+  @keyframes homeBubbleRise { 0% { transform:translateY(0) scale(1); opacity:0.7; } 100% { transform:translateY(-110vh) scale(0.6); opacity:0; } }
+  @keyframes timerPulse   { 0%,100% { transform:translate(-50%,-50%) scale(1); } 50% { transform:translate(-50%,-50%) scale(1.22); } }
+  @keyframes fadeInUp     { from { opacity:0; transform:translateY(14px); } to { opacity:1; transform:translateY(0); } }
+  @keyframes confettiFall { 0% { transform:translateY(0) translateX(0) rotate(0deg); opacity:1; } 100% { transform:translateY(108vh) translateX(var(–drift)) rotate(calc(var(–rot)*4)); opacity:0; } }
+  @keyframes celebPop     { 0% { transform:scale(0.3); opacity:0; } 65% { transform:scale(1.15); } 100% { transform:scale(1); opacity:1; } }
+  @keyframes splash       { 0% { opacity:1; transform:translate(-50%,-50%) translate(0,0) scale(1); } 100% { opacity:0; transform:translate(-50%,-50%) translate(var(–vx),var(–vy)) scale(0.05); } }
+  @keyframes popSequence  { 0% { transform:scale(0.82) scaleY(0.75); opacity:0.9; filter:brightness(1.3) saturate(1.6); } 15% { transform:scale(1.18) scaleY(0.88); opacity:1; filter:brightness(1.5) saturate(2); } 40% { transform:scale(1.08) rotate(8deg); opacity:1; } 100% { transform:scale(1) rotate(0deg); opacity:1; filter:brightness(1); } }
+  @keyframes achSlideIn   { from { transform:translateX(120%); opacity:0; } to { transform:translateX(0); opacity:1; } }
+  @keyframes scoreFlash   { 0%,100% { transform:scale(1); } 50% { transform:scale(1.18); color:#9860f8; } }
+  .bubbleFloat  { animation:bubbleFloat 2.8s ease-in-out infinite; }
+  .bubbleFloat3 { animation:bubbleFloat3 3s ease-in-out infinite; }
+  .homeBubble   { animation:homeBubbleRise linear infinite; }
+  .confettiPiece { animation:confettiFall linear forwards; }
+  .splash       { animation:splash 0.45s ease-out forwards; }
+  `;
+
+// ─── Styles ───────────────────────────────────────────────────────────────────
+const st = {
+root: { minHeight:“100vh”, height:“100vh”, fontFamily:”‘Nunito’, sans-serif”, display:“flex”, flexDirection:“column”, alignItems:“center”, userSelect:“none”, WebkitUserSelect:“none”, overflowX:“hidden” },
+bg:   { position:“fixed”, inset:0, zIndex:0, background:“linear-gradient(150deg,#dff0ff 0%,#f0e4ff 55%,#e4fff0 100%)” },
+
+// Home
+homeWrap: { position:“relative”, zIndex:1, width:“100%”, maxWidth:“400px”, padding:“48px 20px 40px”, display:“flex”, flexDirection:“column”, alignItems:“center”, gap:“16px” },
+homeLogo: { fontSize:“64px” },
+homeTitle: { fontFamily:”‘Fredoka One’, cursive”, fontSize:“38px”, color:”#4a6fe8”, letterSpacing:“0.02em” },
+homeSub:  { fontSize:“15px”, color:”#9aaace”, letterSpacing:“0.1em”, marginTop:”-8px” },
+modeCards: { width:“100%”, display:“flex”, flexDirection:“column”, gap:“14px”, marginTop:“12px” },
+modeCard: { width:“100%”, padding:“22px 20px”, borderRadius:“20px”, border:“none”, cursor:“pointer”, textAlign:“left”, display:“flex”, flexDirection:“column”, gap:“6px”, boxShadow:“0 4px 20px rgba(100,130,220,0.15)”, animation:“fadeInUp 0.4s ease” },
+modeInf:  { background:“linear-gradient(135deg,rgba(220,240,255,0.95),rgba(200,220,255,0.9))”, borderLeft:“4px solid #4a9fe8” },
+modeTime: { background:“linear-gradient(135deg,rgba(255,235,220,0.95),rgba(255,215,200,0.9))”, borderLeft:“4px solid #e87a20” },
+modeEmoji: { fontSize:“28px” },
+modeName:  { fontFamily:”‘Fredoka One’, cursive”, fontSize:“20px”, color:”#2a3a6a” },
+modeDesc:  { fontSize:“13px”, color:”#6a7aaa”, lineHeight:1.5 },
+modeHS:    { fontSize:“12px”, fontWeight:900, color:”#c08020”, marginTop:“4px” },
+homeActions: { display:“flex”, gap:“10px”, flexWrap:“wrap”, justifyContent:“center” },
+homeBtn: { fontFamily:”‘Fredoka One’, cursive”, fontSize:“15px”, padding:“10px 18px”, borderRadius:“50px”, border:“none”, background:“rgba(255,255,255,0.75)”, color:”#4a6fe8”, cursor:“pointer”, boxShadow:“0 2px 10px rgba(100,130,220,0.12)” },
+
+// Shop
+shopWrap: { position:“relative”, zIndex:1, width:“100%”, maxWidth:“400px”, padding:“16px 16px 40px”, display:“flex”, flexDirection:“column”, gap:“12px” },
+shopHeader: { display:“flex”, alignItems:“center”, justifyContent:“space-between”, marginBottom:“4px” },
+shopTitle: { fontFamily:”‘Fredoka One’, cursive”, fontSize:“22px”, color:”#4a6fe8” },
+coinsDisplay: { fontFamily:”‘Fredoka One’, cursive”, fontSize:“16px”, color:”#c08020” },
+shopSection: { fontFamily:”‘Fredoka One’, cursive”, fontSize:“16px”, color:”#6a80b0”, marginTop:“8px” },
+shopGrid: { display:“grid”, gridTemplateColumns:“repeat(2,1fr)”, gap:“10px” },
+shopCard: { background:“rgba(255,255,255,0.7)”, borderRadius:“16px”, padding:“14px 10px”, display:“flex”, flexDirection:“column”, alignItems:“center”, gap:“6px”, border:“2px solid transparent”, boxShadow:“0 2px 10px rgba(100,130,220,0.1)” },
+shopCardActive: { borderColor:”#4a6fe8”, background:“rgba(220,235,255,0.8)” },
+shopItemName: { fontSize:“13px”, fontWeight:700, color:”#4a5a80” },
+shopActive: { fontSize:“12px”, color:”#4a6fe8”, fontWeight:900 },
+shopBtnSec: { fontSize:“12px”, fontWeight:700, color:”#4a6fe8”, background:“none”, border:“1.5px solid #4a6fe8”, borderRadius:“20px”, padding:“4px 12px”, cursor:“pointer” },
+shopBtnBuy: { fontSize:“13px”, fontWeight:900, color:“white”, background:“linear-gradient(135deg,#60a8f8,#9860f8)”, border:“none”, borderRadius:“20px”, padding:“5px 14px”, cursor:“pointer” },
+shopNote: { fontSize:“12px”, color:”#9aaace”, textAlign:“center”, marginTop:“8px” },
+
+// Stats
+statRow: { display:“flex”, alignItems:“center”, gap:“12px”, background:“rgba(255,255,255,0.65)”, borderRadius:“14px”, padding:“12px 16px”, boxShadow:“0 2px 8px rgba(100,130,220,0.08)” },
+statEmoji: { fontSize:“22px”, width:“32px”, textAlign:“center” },
+statLabel: { flex:1, fontSize:“14px”, color:”#4a5a80”, fontWeight:700 },
+statVal:   { fontFamily:”‘Fredoka One’, cursive”, fontSize:“18px”, color:”#4a6fe8” },
+
+// Achievements
+achRow: { display:“flex”, alignItems:“center”, gap:“12px”, background:“rgba(255,255,255,0.65)”, borderRadius:“14px”, padding:“12px 16px”, boxShadow:“0 2px 8px rgba(100,130,220,0.08)”, transition:“opacity 0.3s” },
+achRowName: { fontSize:“14px”, fontWeight:900, color:”#2a3a6a” },
+achRowDesc: { fontSize:“12px”, color:”#8a9ac0” },
+achDone: { fontSize:“16px”, color:”#4a6fe8”, marginLeft:“auto” },
+
+// Achievement toast
+achToast: { position:“fixed”, top:16, right:16, zIndex:200, display:“flex”, alignItems:“center”, gap:“12px”, background:“rgba(255,255,255,0.95)”, borderRadius:“16px”, padding:“12px 16px”, boxShadow:“0 4px 20px rgba(100,130,220,0.25)”, border:“1.5px solid rgba(100,150,220,0.3)”, animation:“achSlideIn 0.4s ease”, maxWidth:“280px” },
+achName: { fontSize:“13px”, fontWeight:900, color:”#2a3a6a” },
+achDesc: { fontSize:“11px”, color:”#8a9ac0” },
+
+// Game shared
+wrap: { position:“relative”, zIndex:1, width:“100%”, maxWidth:“400px”, minHeight:“100vh”, padding:“12px 12px 16px”, display:“flex”, flexDirection:“column”, alignItems:“center”, gap:“8px” },
+header: { width:“100%”, display:“flex”, alignItems:“center”, justifyContent:“space-between”, flexShrink:0 },
+backBtn: { fontFamily:”‘Nunito’, sans-serif”, fontSize:“13px”, fontWeight:700, color:”#7a90c8”, background:“none”, border:“none”, cursor:“pointer”, padding:“6px 0” },
+modeTag: { fontFamily:”‘Fredoka One’, cursive”, fontSize:“16px”, color:”#4a6fe8” },
+headerScore: { display:“flex”, alignItems:“baseline”, gap:“3px” },
+headerScoreNum: { fontFamily:”‘Fredoka One’, cursive”, fontSize:“22px”, color:”#4a6fe8” },
+headerScoreSub: { fontSize:“11px”, color:”#9aaace” },
+bestRow: { fontSize:“12px”, color:”#b09040”, fontWeight:700, letterSpacing:“0.04em” },
+comboOverlay: { position:“absolute”, top:8, right:12, zIndex:20, fontSize:“13px”, fontWeight:900, color:”#e040a0”, pointerEvents:“none”, background:“rgba(255,255,255,0.8)”, borderRadius:“20px”, padding:“3px 10px”, boxShadow:“0 2px 8px rgba(220,60,160,0.15)” },
+hud: { width:“100%”, display:“flex”, alignItems:“center”, justifyContent:“space-between”, background:“rgba(255,255,255,0.72)”, borderRadius:“18px”, padding:“10px 22px”, boxShadow:“0 2px 14px rgba(100,130,220,0.1)”, border:“1px solid rgba(200,215,255,0.6)” },
+hudBlock: { display:“flex”, flexDirection:“column”, alignItems:“center”, minWidth:“52px” },
+hudBig: { fontFamily:”‘Fredoka One’, cursive”, fontSize:“24px”, color:”#4a6fe8”, lineHeight:1 },
+hudSub: { fontSize:“10px”, color:”#9aaace”, textTransform:“uppercase”, letterSpacing:“0.08em” },
+timerWrap: { position:“relative”, width:“58px”, height:“58px”, display:“flex”, alignItems:“center”, justifyContent:“center” },
+timerSvg: { position:“absolute”, inset:0, transform:“rotate(-90deg)”, width:“100%”, height:“100%” },
+trackCircle: { fill:“none”, stroke:“rgba(160,180,230,0.22)”, strokeWidth:5 },
+arcCircle: { fill:“none”, strokeWidth:5, strokeLinecap:“round”, strokeDasharray:“144.5” },
+timerNum: { position:“absolute”, top:“50%”, left:“50%”, transform:“translate(-50%,-50%)”, fontFamily:”‘Fredoka One’, cursive”, fontSize:“22px”, lineHeight:1 },
+levelBadge: { fontSize:“12px”, fontWeight:700, letterSpacing:“0.05em”, padding:“5px 14px”, borderRadius:“20px”, background:“rgba(255,255,255,0.7)”, color:”#6a80b0”, border:“1px solid rgba(200,215,255,0.5)”, transition:“all 0.3s” },
+levelBadgeUp: { background:“rgba(255,220,50,0.95)”, color:”#7a4800”, transform:“scale(1.08)” },
+sheet: { position:“relative”, width:“100%”, flex:1, background:“rgba(195,212,230,0.38)”, borderRadius:“20px”, boxShadow:“0 6px 32px rgba(100,130,220,0.12), inset 0 1px 0 rgba(255,255,255,0.8)”, border:“1px solid rgba(170,195,220,0.5)”, overflow:“hidden” },
+scrollSheet: { width:“100%”, flex:1, minHeight:0, height:“calc(100vh - 140px)”, overflowY:“auto”, background:“rgba(195,212,230,0.38)”, borderRadius:“20px”, boxShadow:“0 6px 32px rgba(100,130,220,0.12), inset 0 1px 0 rgba(255,255,255,0.8)”, border:“1px solid rgba(170,195,220,0.5)”, WebkitOverflowScrolling:“touch” },
+refillLayer: { position:“absolute”, inset:0, zIndex:10, borderRadius:“18px”, display:“flex”, alignItems:“center”, justifyContent:“center”, background:“rgba(225,240,255,0.9)” },
+refillMsg: { fontFamily:”‘Fredoka One’, cursive”, fontSize:“26px”, color:”#4a6fe8” },
+panel: { width:“100%”, display:“flex”, flexDirection:“column”, alignItems:“center”, gap:“12px”, background:“rgba(255,255,255,0.72)”, borderRadius:“18px”, padding:“24px 20px”, boxShadow:“0 4px 20px rgba(100,130,220,0.1)”, border:“1px solid rgba(200,215,255,0.6)”, animation:“fadeInUp 0.4s ease” },
+panelInfo: { fontSize:“15px”, color:”#6a82b0”, textAlign:“center”, lineHeight:1.65 },
+btn: { fontFamily:”‘Fredoka One’, cursive”, fontSize:“19px”, letterSpacing:“0.04em”, color:“white”, background:“linear-gradient(135deg,#60a8f8,#9860f8)”, border:“none”, borderRadius:“50px”, padding:“13px 44px”, cursor:“pointer”, boxShadow:“0 4px 18px rgba(100,100,240,0.32)” },
+resultEmoji: { fontSize:“50px”, animation:“celebPop 0.5s ease forwards” },
+overTitle: { fontFamily:”‘Fredoka One’, cursive”, fontSize:“28px” },
+overScore: { fontFamily:”‘Fredoka One’, cursive”, fontSize:“58px”, color:”#3020c0”, lineHeight:1 },
+overSub: { fontSize:“16px”, color:”#9aaace”, marginTop:”-4px” },
+resultMsg: { fontSize:“15px”, textAlign:“center”, fontWeight:700 },
+newBest: { fontSize:“14px”, fontWeight:900, color:”#c08020”, letterSpacing:“0.05em” },
+};
