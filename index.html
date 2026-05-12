@@ -126,8 +126,6 @@ box-shadow: 4px 12px 28px rgba(0,0,0,0.28);
 // ─────────────────────────────────────────────────────
 // CONFIG
 // ─────────────────────────────────────────────────────
-const PEXELS_KEY   = 'uW3ruQAHsj1M7Rhfw3IDRuDU40jvHyNCGk3fK5zto4FirA3ux4xByn5Y';
-const REMOVEBG_KEY = 'V6P4yToSRoNDfzXTVQmg9VRf';
 const THUMB_H      = 100;
 const THUMB_COUNT  = 12;  // fewer = faster initial load
 const ITEM_SCALE   = 1.9;
@@ -679,32 +677,6 @@ function setThumb(sk, src, tw, th) {
   c.getContext('2d').drawImage(src, 0, 0, tw, th);
   c.style.cssText='display:block;height:100%;width:auto;pointer-events:none;';
   sk.appendChild(c);
-}
-
-async function loadTray(query='') {
-  tray.innerHTML='';
-
-  // Show skeletons immediately
-  for (let i=0; i<THUMB_COUNT; i++) {
-    const tw=Math.round(THUMB_H*ASPECTS[i%ASPECTS.length]);
-    const sk=document.createElement('div');
-    sk.className='thumb loading'; sk.id='sk'+i; sk.style.width=tw+'px';
-    tray.appendChild(sk);
-  }
-
-  // Use query as seed variation for visual variety
-  const baseSeed = query
-    ? query.split('').reduce((a,c)=>a+c.charCodeAt(0),0) * 7
-    : Math.floor(Math.random() * 10000);
-
-  // Generate all cutouts — instant, no network
-  for (let i=0; i<THUMB_COUNT; i++) {
-    const tw  = Math.round(THUMB_H*ASPECTS[i%ASPECTS.length]);
-    const th  = THUMB_H;
-    const src = generateCutout(baseSeed + i * 137, tw * 2, th * 2);
-    const sk  = document.getElementById('sk'+i);
-    if (sk) setThumb(sk, src, tw, th);
-  }
 }
 
 // ─────────────────────────────────────────────────────
