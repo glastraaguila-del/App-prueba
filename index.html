@@ -7,136 +7,68 @@
 <title>paste</title>
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
 html, body {
-width: 100%; height: 100%;
-overflow: hidden;
-touch-action: none;
--webkit-tap-highlight-color: transparent;
-background: #f5f2ed;
-user-select: none;
+  width: 100%; height: 100%; overflow: hidden;
+  touch-action: none; -webkit-tap-highlight-color: transparent;
+  background: #f5f2ed; user-select: none;
 }
-
-#c {
-position: fixed;
-top: 0; left: 0;
-display: block;
-touch-action: none;
-}
+#c { position: fixed; top: 0; left: 0; display: block; touch-action: none; }
 
 /* Tray */
 #tray {
-position: fixed;
-bottom: 48px; left: 0; right: 0;
-height: 130px;
-background: #111;
-display: flex;
-align-items: center;
-padding: 0 12px;
-gap: 10px;
-overflow-x: auto;
-overflow-y: hidden;
-touch-action: pan-x;
--webkit-overflow-scrolling: touch;
-scrollbar-width: none;
-z-index: 10;
+position: fixed; bottom: 48px; left: 0; right: 0; height: 130px;
+background: #111; display: flex; align-items: center;
+padding: 0 12px; gap: 10px;
+overflow-x: auto; overflow-y: hidden;
+touch-action: pan-x; -webkit-overflow-scrolling: touch;
+scrollbar-width: none; z-index: 10;
 }
 #tray::-webkit-scrollbar { display: none; }
-
 .thumb {
-flex-shrink: 0;
-height: 100px;
-overflow: hidden;
-border-radius: 2px;
-background: #222;
+flex-shrink: 0; height: 100px; overflow: hidden; border-radius: 2px;
+background: repeating-conic-gradient(#2a2a2a 0% 25%,#1e1e1e 0% 50%) 0 0/8px 8px;
 }
-.thumb.loading {
-width: 80px;
-animation: pulse 1s ease-in-out infinite;
-}
-.thumb.ready canvas {
-display: block;
-height: 100%;
-width: auto;
-pointer-events: none;
-}
-@keyframes pulse { 0%, 100% { opacity: .2; } 50% { opacity: .5; } }
+.thumb.loading { width: 80px; animation: pulse 1s ease-in-out infinite; }
+.thumb canvas { display: block; height: 100%; width: auto; pointer-events: none; }
+@keyframes pulse { 0%,100%{opacity:.2} 50%{opacity:.5} }
 
-/* Search bar */
+/* Search */
 #searchbar {
-position: fixed;
-bottom: 0; left: 0; right: 0;
-height: 48px;
-background: #1a1a1a;
-display: flex;
-align-items: center;
-padding: 0 14px;
-gap: 10px;
-z-index: 10;
+position: fixed; bottom: 0; left: 0; right: 0; height: 48px;
+background: #1a1a1a; display: flex; align-items: center;
+padding: 0 14px; gap: 10px; z-index: 10;
 }
 #searchbar input {
-flex: 1;
-height: 32px;
-background: #2a2a2a;
-border: none;
-border-radius: 16px;
-padding: 0 14px;
-color: #fff;
-font-size: 14px;
-font-family: monospace;
-outline: none;
+flex: 1; height: 32px; background: #2a2a2a; border: none;
+border-radius: 16px; padding: 0 14px; color: #fff;
+font-size: 14px; font-family: monospace; outline: none;
 }
-#searchbar input::placeholder { color: rgba(255,255,255,0.2); }
-
+#searchbar input::placeholder { color: rgba(255,255,255,0.25); }
 .icon-btn {
-width: 32px; height: 32px;
-border-radius: 50%;
-background: #2a2a2a;
-border: none;
-cursor: pointer;
-display: flex;
-align-items: center;
-justify-content: center;
-flex-shrink: 0;
-padding: 0;
+width: 32px; height: 32px; border-radius: 50%; background: #2a2a2a;
+border: none; cursor: pointer; display: flex; align-items: center;
+justify-content: center; flex-shrink: 0; padding: 0;
 }
 .icon-btn:active { background: #3a3a3a; }
-.icon-btn svg { display: block; }
 
 /* FABs */
 .fab {
-position: fixed;
-width: 40px; height: 40px;
-border-radius: 50%;
-background: #111;
-border: none;
-display: flex;
-align-items: center;
-justify-content: center;
-z-index: 20;
-box-shadow: 0 2px 12px rgba(0,0,0,0.3);
-opacity: 0;
-pointer-events: none;
-transition: opacity 0.2s, transform 0.1s;
-cursor: pointer;
-padding: 0;
+position: fixed; width: 40px; height: 40px; border-radius: 50%;
+background: #111; border: none; display: flex; align-items: center;
+justify-content: center; z-index: 20; box-shadow: 0 2px 12px rgba(0,0,0,0.3);
+opacity: 0; pointer-events: none; transition: opacity 0.2s, transform 0.1s;
+cursor: pointer; padding: 0;
 }
-.fab svg { display: block; }
 .fab.on { opacity: 1; pointer-events: auto; }
 .fab:active { transform: scale(0.88); }
 #btn-save { right: 14px; }
 #btn-undo { left: 14px; }
 
-/* Drag ghost */
+/* Ghost */
 #ghost {
-position: fixed;
-pointer-events: none;
-z-index: 999;
-display: none;
-transform-origin: center center;
-box-shadow: 4px 12px 28px rgba(0,0,0,0.3);
-overflow: hidden;
-opacity: 0.9;
+position: fixed; pointer-events: none; z-index: 999; display: none;
+transform-origin: center center; overflow: hidden; opacity: 0.9;
+box-shadow: 4px 12px 28px rgba(0,0,0,0.28);
 }
 #ghost canvas { display: block; width: 100%; height: 100%; }
 </style>
@@ -153,7 +85,7 @@ opacity: 0.9;
     <circle cx="6.5" cy="6.5" r="4.5" stroke="white" stroke-width="1.5"/>
     <line x1="10" y1="10" x2="14.5" y2="14.5" stroke="white" stroke-width="1.5" stroke-linecap="round"/>
   </svg>
-  <input id="q" type="text" autocomplete="off" spellcheck="false" placeholder="buscar stickers…">
+  <input id="q" type="text" autocomplete="off" spellcheck="false" placeholder="buscar…">
   <button class="icon-btn" id="btn-search">
     <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
       <polyline points="2,7 7,2 12,7" stroke="rgba(255,255,255,0.6)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
@@ -175,7 +107,6 @@ opacity: 0.9;
     <line x1="2.5" y1="14" x2="13.5" y2="14" stroke="white" stroke-width="1.6" stroke-linecap="round"/>
   </svg>
 </button>
-
 <button class="fab" id="btn-undo">
   <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
     <path d="M3.5 5.5H9a4 4 0 0 1 0 8H5" stroke="white" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
@@ -191,25 +122,24 @@ opacity: 0.9;
 // ─────────────────────────────────────────────────────
 // CONFIG
 // ─────────────────────────────────────────────────────
-const GIPHY_KEY   = 'dc6zaTOxFJmzC';
+// Tenor API — allows CORS from any domain, free tier
+// Get your own key at tenor.com/developer
+const TENOR_KEY   = 'AIzaSyAyimkuYQYF_FXVALexPuGQctUWRURdCEQ'; // demo key
+const TENOR_BASE  = 'https://tenor.googleapis.com/v2';
 const THUMB_H     = 100;
 const THUMB_COUNT = 16;
 const ITEM_SCALE  = 1.9;
 const ASPECTS     = [0.85,1.1,0.75,1.25,0.9,1.0,0.8,1.15,0.7,1.3,0.95,1.05];
-const RAND_TERMS  = ['people','nature','flowers','city','art','fashion','animals',
-                     'food','vintage','space','ocean','fire','music','face','color','texture'];
+const RAND_TERMS  = ['nature','flowers','people','art','fire','water',
+                     'space','animals','food','city','vintage','abstract'];
 const BOTTOM      = 178; // tray 130 + search 48
 
 // ─────────────────────────────────────────────────────
-// CANVAS + WORLD STATE
-// world → canvas:  cx = wx*zoom + panX
-// canvas → world:  wx = (cx - panX) / zoom
+// CANVAS SETUP
 // ─────────────────────────────────────────────────────
 const cvs  = document.getElementById('c');
 const ctx  = cvs.getContext('2d');
 const tray = document.getElementById('tray');
-
-let panX = 0, panY = 0, zoom = 1;
 
 function resize() {
   cvs.width  = window.innerWidth;
@@ -218,19 +148,26 @@ function resize() {
   positionFabs();
   redraw();
 }
-
 function positionFabs() {
   const y = window.innerHeight - BOTTOM - 52;
   document.getElementById('btn-save').style.top = y + 'px';
   document.getElementById('btn-undo').style.top = y + 'px';
 }
+window.addEventListener('resize', () => { resize(); });
+
+// ─────────────────────────────────────────────────────
+// WORLD / COORDINATES
+// world→canvas: cx = wx*zoom + panX
+// canvas→world: wx = (cx-panX)/zoom
+// ─────────────────────────────────────────────────────
+let panX = 0, panY = 0, zoom = 1;
 
 function clientToCanvas(sx, sy) {
   const r = cvs.getBoundingClientRect();
   return [sx - r.left, sy - r.top];
 }
-function canvasToWorld(cx, cy) { return [(cx-panX)/zoom, (cy-panY)/zoom]; }
-function worldToCanvas(wx, wy) { return [wx*zoom+panX, wy*zoom+panY]; }
+function canvasToWorld(cx, cy) { return [(cx - panX) / zoom, (cy - panY) / zoom]; }
+function worldToCanvas(wx, wy) { return [wx * zoom + panX, wy * zoom + panY]; }
 
 // ─────────────────────────────────────────────────────
 // ITEMS  { id, src, w, h, wx, wy, rot, sc, z }
@@ -251,8 +188,6 @@ function updateUI() {
 // ─────────────────────────────────────────────────────
 function redraw() {
   ctx.clearRect(0, 0, cvs.width, cvs.height);
-
-  // Paper
   ctx.fillStyle = '#f5f2ed';
   ctx.fillRect(0, 0, cvs.width, cvs.height);
 
@@ -263,23 +198,19 @@ function redraw() {
   const oy = ((panY % gs) + gs) % gs;
   for (let x = ox; x < cvs.width + gs; x += gs)
     for (let y = oy; y < cvs.height + gs; y += gs) {
-      ctx.beginPath();
-      ctx.arc(x, y, 1, 0, Math.PI * 2);
-      ctx.fill();
+      ctx.beginPath(); ctx.arc(x, y, 1, 0, Math.PI * 2); ctx.fill();
     }
 
-  // Items
+  // Items sorted by z
   for (const item of [...items].sort((a, b) => a.z - b.z)) {
     const [cx, cy] = worldToCanvas(item.wx, item.wy);
     ctx.save();
     ctx.translate(cx, cy);
     ctx.rotate(item.rot * Math.PI / 180);
     ctx.scale(item.sc * zoom, item.sc * zoom);
-    ctx.shadowColor   = 'rgba(0,0,0,0.2)';
-    ctx.shadowBlur    = 16;
-    ctx.shadowOffsetX = 2;
-    ctx.shadowOffsetY = 6;
-    ctx.drawImage(item.src, -item.w/2, -item.h/2, item.w, item.h);
+    ctx.shadowColor = 'rgba(0,0,0,0.2)'; ctx.shadowBlur = 16;
+    ctx.shadowOffsetX = 2; ctx.shadowOffsetY = 6;
+    ctx.drawImage(item.src, -item.w / 2, -item.h / 2, item.w, item.h);
     ctx.restore();
   }
 }
@@ -290,51 +221,44 @@ function redraw() {
 function hitTest(cx, cy) {
   for (const item of [...items].sort((a, b) => b.z - a.z)) {
     const [icx, icy] = worldToCanvas(item.wx, item.wy);
-    const dx  = cx - icx, dy = cy - icy;
+    const dx = cx - icx, dy = cy - icy;
     const rad = -item.rot * Math.PI / 180;
-    const lx  = (dx*Math.cos(rad) - dy*Math.sin(rad)) / (item.sc * zoom);
-    const ly  = (dx*Math.sin(rad) + dy*Math.cos(rad)) / (item.sc * zoom);
-    if (Math.abs(lx) <= item.w/2 && Math.abs(ly) <= item.h/2) return item;
+    const lx = (dx * Math.cos(rad) - dy * Math.sin(rad)) / (item.sc * zoom);
+    const ly = (dx * Math.sin(rad) + dy * Math.cos(rad)) / (item.sc * zoom);
+    if (Math.abs(lx) <= item.w / 2 && Math.abs(ly) <= item.h / 2) return item;
   }
   return null;
 }
 
 // ─────────────────────────────────────────────────────
-// TAP  (single = advance layer, double = send to back)
+// TAP  single=advance layer  double=send to back
 // ─────────────────────────────────────────────────────
 let lastTap = null;
 
 function handleTap(item, cx, cy) {
   const now = Date.now();
-  const isDouble = lastTap
-    && lastTap.id === item.id
+  const dbl = lastTap && lastTap.id === item.id
     && now - lastTap.time < 320
     && Math.hypot(cx - lastTap.cx, cy - lastTap.cy) < 30;
 
-  if (isDouble) {
-    // Normalize z values, put this one at bottom
+  if (dbl) {
     [...items].sort((a, b) => a.z - b.z).forEach((p, i) => { p.z = i + 1; });
     item.z = 0;
     lastTap = null;
   } else {
-    // Swap with next item above
-    const next = items
-      .filter(p => p.id !== item.id && p.z > item.z)
-      .sort((a, b) => a.z - b.z)[0];
-    if (next) { const tmp = item.z; item.z = next.z; next.z = tmp; }
+    const next = items.filter(p => p.id !== item.id && p.z > item.z)
+                      .sort((a, b) => a.z - b.z)[0];
+    if (next) { const t = item.z; item.z = next.z; next.z = t; }
     lastTap = { id: item.id, time: now, cx, cy };
   }
   redraw();
 }
 
 // ─────────────────────────────────────────────────────
-// CANVAS TOUCH INTERACTION
+// CANVAS TOUCH
 // ─────────────────────────────────────────────────────
 let activeTouches = {};
-let panStart      = null;
-let pinchStart    = null;
-let dragItem      = null;
-let pinchItem     = null;
+let panStart = null, pinchStart = null, dragItem = null, pinchItem = null;
 
 cvs.addEventListener('touchstart', e => {
   e.preventDefault();
@@ -342,39 +266,33 @@ cvs.addEventListener('touchstart', e => {
     const [cx, cy] = clientToCanvas(t.clientX, t.clientY);
     activeTouches[t.identifier] = { cx, cy };
   }
-
   if (e.touches.length === 1) {
-    const t = e.touches[0];
-    const [cx, cy] = clientToCanvas(t.clientX, t.clientY);
+    const [cx, cy] = clientToCanvas(e.touches[0].clientX, e.touches[0].clientY);
     const hit = hitTest(cx, cy);
     if (hit) {
       hit.z = ++zTop;
-      dragItem = { item: hit, tid: t.identifier, cx0: cx, cy0: cy, wx0: hit.wx, wy0: hit.wy, moved: false };
+      dragItem = { item: hit, tid: e.touches[0].identifier, cx0: cx, cy0: cy, wx0: hit.wx, wy0: hit.wy, moved: false };
       panStart = null;
     } else {
       panStart = { panX, panY, cx0: cx, cy0: cy };
       dragItem = null;
     }
     pinchStart = null; pinchItem = null;
-
   } else if (e.touches.length === 2) {
     const [ta, tb] = [e.touches[0], e.touches[1]];
     const [cxa, cya] = clientToCanvas(ta.clientX, ta.clientY);
     const [cxb, cyb] = clientToCanvas(tb.clientX, tb.clientY);
     const ha = hitTest(cxa, cya), hb = hitTest(cxb, cyb);
-
     if (ha && hb && ha.id === hb.id) {
-      // Two fingers on same item → scale + rotate
-      const d   = Math.hypot(cxa-cxb, cya-cyb);
+      const d = Math.hypot(cxa-cxb, cya-cyb);
       const ang = Math.atan2(cyb-cya, cxb-cxa);
-      pinchItem  = { item: ha, tids: [ta.identifier, tb.identifier], d0: d, sc0: ha.sc, ang0: ang, rot0: ha.rot };
-      dragItem   = null; panStart = null; pinchStart = null;
+      pinchItem = { item: ha, tids: [ta.identifier, tb.identifier], d0: d, sc0: ha.sc, ang0: ang, rot0: ha.rot };
+      dragItem = null; panStart = null; pinchStart = null;
     } else {
-      // Two fingers on canvas → pan + zoom
-      const d  = Math.hypot(cxa-cxb, cya-cyb);
+      const d = Math.hypot(cxa-cxb, cya-cyb);
       const mx = (cxa+cxb)/2, my = (cya+cyb)/2;
       pinchStart = { panX, panY, zoom, d0: d, mx0: mx, my0: my };
-      dragItem   = null; panStart = null; pinchItem = null;
+      dragItem = null; panStart = null; pinchItem = null;
     }
   }
   redraw();
@@ -386,8 +304,6 @@ cvs.addEventListener('touchmove', e => {
     const [cx, cy] = clientToCanvas(t.clientX, t.clientY);
     if (activeTouches[t.identifier]) activeTouches[t.identifier] = { cx, cy };
   }
-
-  // Drag item
   if (dragItem && e.touches.length === 1) {
     for (const t of e.touches) {
       if (t.identifier !== dragItem.tid) continue;
@@ -398,8 +314,6 @@ cvs.addEventListener('touchmove', e => {
       dragItem.item.wy = dragItem.wy0 + dy / zoom;
     }
   }
-
-  // Pinch item (scale + rotate)
   if (pinchItem && e.touches.length >= 2) {
     let ta = null, tb = null;
     for (const t of e.touches) {
@@ -407,37 +321,30 @@ cvs.addEventListener('touchmove', e => {
       if (t.identifier === pinchItem.tids[1]) tb = t;
     }
     if (ta && tb) {
-      const [cxa, cya] = clientToCanvas(ta.clientX, ta.clientY);
-      const [cxb, cyb] = clientToCanvas(tb.clientX, tb.clientY);
-      const d   = Math.hypot(cxa-cxb, cya-cyb);
+      const [cxa,cya] = clientToCanvas(ta.clientX, ta.clientY);
+      const [cxb,cyb] = clientToCanvas(tb.clientX, tb.clientY);
+      const d = Math.hypot(cxa-cxb, cya-cyb);
       const ang = Math.atan2(cyb-cya, cxb-cxa);
       pinchItem.item.sc  = Math.max(0.1, Math.min(6, pinchItem.sc0 * d / pinchItem.d0));
       pinchItem.item.rot = pinchItem.rot0 + (ang - pinchItem.ang0) * 180 / Math.PI;
     }
   }
-
-  // Pinch canvas (pan + zoom)
   if (pinchStart && e.touches.length >= 2) {
     const [ta, tb] = [e.touches[0], e.touches[1]];
-    const [cxa, cya] = clientToCanvas(ta.clientX, ta.clientY);
-    const [cxb, cyb] = clientToCanvas(tb.clientX, tb.clientY);
-    const d  = Math.hypot(cxa-cxb, cya-cyb);
+    const [cxa,cya] = clientToCanvas(ta.clientX, ta.clientY);
+    const [cxb,cyb] = clientToCanvas(tb.clientX, tb.clientY);
+    const d = Math.hypot(cxa-cxb, cya-cyb);
     const mx = (cxa+cxb)/2, my = (cya+cyb)/2;
     const nz = Math.max(0.08, Math.min(10, pinchStart.zoom * d / pinchStart.d0));
-    const r  = nz / pinchStart.zoom;
-    panX = mx - r * (pinchStart.mx0 - pinchStart.panX);
-    panY = my - r * (pinchStart.my0 - pinchStart.panY);
+    panX = mx - (nz/pinchStart.zoom) * (pinchStart.mx0 - pinchStart.panX);
+    panY = my - (nz/pinchStart.zoom) * (pinchStart.my0 - pinchStart.panY);
     zoom = nz;
   }
-
-  // Pan canvas
   if (panStart && e.touches.length === 1) {
-    const t = e.touches[0];
-    const [cx, cy] = clientToCanvas(t.clientX, t.clientY);
+    const [cx, cy] = clientToCanvas(e.touches[0].clientX, e.touches[0].clientY);
     panX = panStart.panX + (cx - panStart.cx0);
     panY = panStart.panY + (cy - panStart.cy0);
   }
-
   redraw();
 }, { passive: false });
 
@@ -453,9 +360,7 @@ cvs.addEventListener('touchend', e => {
 }, { passive: false });
 
 // Mouse (desktop)
-let mouseState     = null;
-let mouseClickItem = null;
-
+let mouseState = null, mouseClickItem = null;
 cvs.addEventListener('mousedown', e => {
   const [cx, cy] = clientToCanvas(e.clientX, e.clientY);
   const hit = hitTest(cx, cy);
@@ -467,7 +372,6 @@ cvs.addEventListener('mousedown', e => {
     mouseState = { type: 'pan', panX, panY, cx0: cx, cy0: cy };
   }
 });
-
 document.addEventListener('mousemove', e => {
   if (!mouseState) return;
   const [cx, cy] = clientToCanvas(e.clientX, e.clientY);
@@ -482,65 +386,45 @@ document.addEventListener('mousemove', e => {
   }
   redraw();
 });
-
 document.addEventListener('mouseup', () => {
   if (mouseClickItem && !mouseClickItem.moved)
     handleTap(mouseClickItem.item, mouseClickItem.cx, mouseClickItem.cy);
-  mouseClickItem = null;
-  mouseState = null;
+  mouseClickItem = null; mouseState = null;
 });
-
 cvs.addEventListener('wheel', e => {
   e.preventDefault();
   const nz = Math.max(0.08, Math.min(10, zoom * (e.deltaY > 0 ? 0.9 : 1.1)));
   const [cx, cy] = clientToCanvas(e.clientX, e.clientY);
   panX = cx - (cx - panX) * nz / zoom;
   panY = cy - (cy - panY) * nz / zoom;
-  zoom = nz;
-  redraw();
+  zoom = nz; redraw();
 }, { passive: false });
 
 // ─────────────────────────────────────────────────────
-// TRAY DRAG → CANVAS DROP
-// Ghost follows finger. Drop reads ghost.getBoundingClientRect()
-// for exact position — independent of event coordinates.
+// TRAY DRAG → DROP
 // ─────────────────────────────────────────────────────
 const ghost       = document.getElementById('ghost');
 const ghostCanvas = ghost.querySelector('canvas');
 const ghostCtx    = ghostCanvas.getContext('2d');
-let   ghostSrc    = null;
-let   ghostW      = 0;
-let   ghostH      = 0;
-let   ghostRot    = 0;
-
-// Touch drag
-let trayTouchId  = null;
-let trayStartX   = 0;
-let trayStartY   = 0;
-let trayDragging = false;
-let trayScrolling= false;
+let ghostSrc = null, ghostW = 0, ghostH = 0, ghostRot = 0;
+let trayTouchId = null, trayStartX = 0, trayStartY = 0;
+let trayDragging = false, trayScrolling = false;
+let mouseTrayActive = false;
 
 tray.addEventListener('touchstart', e => {
   const thumb = e.target.closest('.thumb');
   if (!thumb?._src) return;
   const t = e.changedTouches[0];
-  trayTouchId   = t.identifier;
-  trayStartX    = t.clientX;
-  trayStartY    = t.clientY;
-  trayDragging  = false;
-  trayScrolling = false;
+  trayTouchId = t.identifier; trayStartX = t.clientX; trayStartY = t.clientY;
+  trayDragging = false; trayScrolling = false;
 }, { passive: true });
 
 tray.addEventListener('touchmove', e => {
   if (trayTouchId === null) return;
   let t = null;
-  for (const touch of e.touches)
-    if (touch.identifier === trayTouchId) { t = touch; break; }
+  for (const touch of e.touches) if (touch.identifier === trayTouchId) { t = touch; break; }
   if (!t) return;
-
-  const dx = t.clientX - trayStartX;
-  const dy = trayStartY - t.clientY; // positive = upward
-
+  const dx = t.clientX - trayStartX, dy = trayStartY - t.clientY;
   if (!trayDragging && !trayScrolling) {
     if (Math.abs(dx) > Math.abs(dy) + 5) { trayScrolling = true; return; }
     if (dy > 12) {
@@ -561,12 +445,8 @@ tray.addEventListener('touchmove', e => {
 
 tray.addEventListener('touchend', () => {
   if (trayDragging) commitDrop();
-  trayTouchId  = null;
-  trayDragging = false;
+  trayTouchId = null; trayDragging = false;
 }, { passive: true });
-
-// Mouse drag
-let mouseTrayActive = false;
 
 tray.addEventListener('mousedown', e => {
   const thumb = e.target.closest('.thumb');
@@ -575,17 +455,14 @@ tray.addEventListener('mousedown', e => {
   startGhost(thumb, e.clientX, e.clientY);
   mouseTrayActive = true;
 });
-
 document.addEventListener('mousemove', e => {
   if (!mouseTrayActive) return;
   ghost.style.left = (e.clientX - ghostW/2) + 'px';
   ghost.style.top  = (e.clientY - ghostH/2) + 'px';
 });
-
 document.addEventListener('mouseup', () => {
   if (!mouseTrayActive) return;
-  mouseTrayActive = false;
-  commitDrop();
+  mouseTrayActive = false; commitDrop();
 });
 
 function startGhost(thumb, cx, cy) {
@@ -593,16 +470,9 @@ function startGhost(thumb, cx, cy) {
   ghostW   = Math.round(thumb._w * ITEM_SCALE);
   ghostH   = Math.round(thumb._h * ITEM_SCALE);
   ghostRot = (Math.random() - 0.5) * 20;
-  ghost.style.cssText = [
-    'display:block',
-    `width:${ghostW}px`,
-    `height:${ghostH}px`,
-    `left:${cx - ghostW/2}px`,
-    `top:${cy - ghostH/2}px`,
-    `transform:rotate(${ghostRot}deg)`,
-  ].join(';');
-  ghostCanvas.width  = ghostW;
-  ghostCanvas.height = ghostH;
+  ghost.style.cssText = `display:block;width:${ghostW}px;height:${ghostH}px;` +
+    `left:${cx-ghostW/2}px;top:${cy-ghostH/2}px;transform:rotate(${ghostRot}deg);`;
+  ghostCanvas.width = ghostW; ghostCanvas.height = ghostH;
   ghostCtx.clearRect(0, 0, ghostW, ghostH);
   ghostCtx.drawImage(ghostSrc, 0, 0, ghostW, ghostH);
 }
@@ -610,34 +480,33 @@ function startGhost(thumb, cx, cy) {
 function commitDrop() {
   const gr = ghost.getBoundingClientRect();
   ghost.style.display = 'none';
-  const screenCX = gr.left + gr.width  / 2;
-  const screenCY = gr.top  + gr.height / 2;
-  const [ccx, ccy] = clientToCanvas(screenCX, screenCY);
+  const [ccx, ccy] = clientToCanvas(gr.left + gr.width/2, gr.top + gr.height/2);
   if (ccx < 0 || ccy < 0 || ccx > cvs.width || ccy > cvs.height) return;
   const [wx, wy] = canvasToWorld(ccx, ccy);
   items.push({ id: ++idSeq, src: ghostSrc, w: ghostW, h: ghostH, wx, wy, rot: ghostRot, sc: 1, z: ++zTop });
   undoStack.push(idSeq);
-  updateUI();
-  redraw();
+  updateUI(); redraw();
 }
 
 // ─────────────────────────────────────────────────────
 // IMAGE LOADING
-// Giphy stickers: transparent PNG frames via fixed_height_still
-// Always transparent, no API credits needed.
+// Tenor API — allows CORS from GitHub Pages.
+// Sticker search returns images with transparent backgrounds.
 // ─────────────────────────────────────────────────────
+
+// Load image URL into canvas preserving transparency
 function loadImage(url, tw, th) {
   return new Promise(resolve => {
     const img = new Image();
     img.crossOrigin = 'anonymous';
     img.onload = () => {
-      const c   = document.createElement('canvas');
-      c.width   = tw; c.height = th;
+      const c = document.createElement('canvas');
+      c.width = tw; c.height = th;
       const ctx = c.getContext('2d');
-      ctx.clearRect(0, 0, tw, th); // transparent bg — preserves sticker cutout
-      const s   = Math.max(tw / img.naturalWidth, th / img.naturalHeight);
-      const sx  = (img.naturalWidth  - tw/s) / 2;
-      const sy  = (img.naturalHeight - th/s) / 2;
+      ctx.clearRect(0, 0, tw, th); // keep transparent background
+      const s  = Math.max(tw / img.naturalWidth, th / img.naturalHeight);
+      const sx = (img.naturalWidth  - tw/s) / 2;
+      const sy = (img.naturalHeight - th/s) / 2;
       ctx.drawImage(img, sx, sy, tw/s, th/s, 0, 0, tw, th);
       resolve(c);
     };
@@ -646,65 +515,27 @@ function loadImage(url, tw, th) {
   });
 }
 
-function makeSkeleton(i, tw) {
-  const sk = document.createElement('div');
-  sk.className  = 'thumb loading';
-  sk.id         = 'sk' + i;
-  sk.style.width = tw + 'px';
-  tray.appendChild(sk);
-  return sk;
-}
-
-function activateThumb(sk, src, tw, th) {
-  if (!sk?.isConnected) return;
-  sk.classList.remove('loading');
-  sk.classList.add('ready');
-  sk.style.width   = tw + 'px';
-  sk.style.height  = th + 'px';
-  // Checkerboard shows transparency
-  sk.style.background = 'repeating-conic-gradient(#2a2a2a 0% 25%,#1e1e1e 0% 50%) 0 0/8px 8px';
-  sk._src = src;
-  sk._w   = tw;
-  sk._h   = th;
-  sk.style.transform = `rotate(${(Math.random()-0.5)*14}deg)`;
-  sk.style.marginTop  = `${(Math.random()-0.5)*16}px`;
-  const c = document.createElement('canvas');
-  c.width  = tw; c.height = th;
-  c.getContext('2d').drawImage(src, 0, 0);
-  sk.appendChild(c);
-}
-
-async function fetchStickers(query) {
-  const base   = 'https://api.giphy.com/v1/stickers';
-  const offset = Math.floor(Math.random() * 100);
-  const url    = query
-    ? `${base}/search?api_key=${GIPHY_KEY}&q=${encodeURIComponent(query)}&limit=${THUMB_COUNT}&rating=g`
-    : `${base}/trending?api_key=${GIPHY_KEY}&limit=${THUMB_COUNT}&offset=${offset}&rating=g`;
-
-  // Use no-cors mode — we only need the JSON metadata, not images
-  // If CORS blocks, fall back to JSONP via script tag
+// Fetch stickers from Tenor (CORS-safe, free)
+async function fetchTenorStickers(query) {
+  const term   = query || RAND_TERMS[Math.floor(Math.random() * RAND_TERMS.length)];
+  const url    = `${TENOR_BASE}/search?q=${encodeURIComponent(term)}&key=${TENOR_KEY}` +
+                 `&limit=${THUMB_COUNT}&media_filter=gif,tinygif&searchfilter=sticker`;
   try {
-    const res = await fetch(url, { mode: 'cors' });
-    if (res.ok) {
-      const data = await res.json();
-      return data.data || [];
-    }
-  } catch(e) {}
+    const res  = await fetch(url);
+    const data = await res.json();
+    return data.results || [];
+  } catch(e) {
+    console.warn('Tenor error:', e);
+    return [];
+  }
+}
 
-  // JSONP fallback for environments that block CORS
-  return new Promise(resolve => {
-    const cb = '__giphy_' + Date.now();
-    window[cb] = data => {
-      delete window[cb];
-      document.getElementById(cb)?.remove();
-      resolve(data?.data || []);
-    };
-    const s = document.createElement('script');
-    s.id  = cb;
-    s.src = url + `&callback=${cb}`;
-    s.onerror = () => { delete window[cb]; s.remove(); resolve([]); };
-    document.head.appendChild(s);
-  });
+// Extract best transparent image URL from Tenor result
+function getTenorUrl(result) {
+  const formats = result?.media_formats;
+  if (!formats) return null;
+  // Prefer: tinygif (small, transparent) > gif
+  return formats.tinygif?.url || formats.gif?.url || null;
 }
 
 async function loadTray(query = '') {
@@ -712,28 +543,40 @@ async function loadTray(query = '') {
 
   // Show skeletons immediately
   for (let i = 0; i < THUMB_COUNT; i++) {
-    const tw = Math.round(THUMB_H * ASPECTS[i % ASPECTS.length]);
-    makeSkeleton(i, tw);
+    const sk = document.createElement('div');
+    sk.className = 'thumb loading';
+    sk.id = 'sk' + i;
+    sk.style.width = Math.round(THUMB_H * ASPECTS[i % ASPECTS.length]) + 'px';
+    tray.appendChild(sk);
   }
 
-  const stickers = await fetchStickers(query);
+  const results = await fetchTenorStickers(query);
 
-  // Load images in parallel, each updates its own skeleton when ready
-  await Promise.all(stickers.map(async (s, i) => {
+  await Promise.all(results.map(async (result, i) => {
+    const sk = document.getElementById('sk' + i);
+    if (!sk) return;
     const tw  = Math.round(THUMB_H * ASPECTS[i % ASPECTS.length]);
     const th  = THUMB_H;
-    // fixed_height_still = static PNG — stickers guaranteed transparent
-    // downsampled_still is smaller/faster but lower quality
-    const url = s.images?.fixed_height_still?.url
-             || s.images?.downsized_still?.url
-             || s.images?.fixed_height?.url;
+    const url = getTenorUrl(result);
     if (!url) return;
     const src = await loadImage(url, tw, th);
-    if (src) activateThumb(document.getElementById('sk' + i), src, tw, th);
+    if (!src || !sk.isConnected) return;
+
+    sk.classList.remove('loading');
+    sk.style.width   = tw + 'px';
+    sk.style.height  = th + 'px';
+    sk._src = src; sk._w = tw; sk._h = th;
+    sk.style.transform = `rotate(${(Math.random()-0.5)*14}deg)`;
+    sk.style.marginTop  = `${(Math.random()-0.5)*16}px`;
+    const c = document.createElement('canvas');
+    c.width = tw; c.height = th;
+    c.getContext('2d').drawImage(src, 0, 0);
+    c.style.cssText = 'display:block;height:100%;width:auto;pointer-events:none;';
+    sk.appendChild(c);
   }));
 
-  // Remove unused skeletons (if fewer results than THUMB_COUNT)
-  for (let i = stickers.length; i < THUMB_COUNT; i++)
+  // Remove unused skeletons
+  for (let i = results.length; i < THUMB_COUNT; i++)
     document.getElementById('sk' + i)?.remove();
 }
 
@@ -745,39 +588,28 @@ document.getElementById('btn-search').addEventListener('click', () => {
   document.getElementById('q').blur();
   loadTray(q);
 });
-
 document.getElementById('btn-refresh').addEventListener('click', () => {
   document.getElementById('q').value = '';
-  // Pass a random term so we get fresh variety each refresh
-  const term = RAND_TERMS[Math.floor(Math.random() * RAND_TERMS.length)];
-  loadTray(term);
+  loadTray(''); // picks a new random term each time
 });
-
 document.getElementById('q').addEventListener('keydown', e => {
   if (e.key === 'Enter') document.getElementById('btn-search').click();
 });
-
 document.getElementById('btn-undo').addEventListener('click', () => {
   if (!undoStack.length) return;
-  const id = undoStack.pop();
-  items = items.filter(p => p.id !== id);
-  updateUI();
-  redraw();
+  items = items.filter(p => p.id !== undoStack.pop());
+  updateUI(); redraw();
 });
-
 document.getElementById('btn-save').addEventListener('click', () => {
   if (!items.length) return;
   const out = document.createElement('canvas');
-  out.width  = cvs.width;
-  out.height = cvs.height;
+  out.width = cvs.width; out.height = cvs.height;
   out.getContext('2d').drawImage(cvs, 0, 0);
-  const a    = document.createElement('a');
+  const a = document.createElement('a');
   a.download = `collage-${Date.now()}.png`;
-  a.href     = out.toDataURL('image/png');
+  a.href = out.toDataURL('image/png');
   a.click();
 });
-
-window.addEventListener('resize', resize);
 
 // ─────────────────────────────────────────────────────
 // INIT
