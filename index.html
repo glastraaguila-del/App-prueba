@@ -7,27 +7,26 @@
 <title>paste</title>
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
 html, body {
-  width: 100%; height: 100%;
-  overflow: hidden;
-  touch-action: none;
-  -webkit-tap-highlight-color: transparent;
-  background: #111;
-  user-select: none;
-  font-family: monospace;
+width: 100%; height: 100%;
+overflow: hidden;
+touch-action: none;
+-webkit-tap-highlight-color: transparent;
+background: #f5f2ed;
+user-select: none;
 }
 
-/* Main canvas fills the top area */
+/* ── Canvas ── */
 #c {
 position: fixed;
 top: 0; left: 0;
 display: block;
-background: #f5f2ed;
 touch-action: none;
 cursor: default;
 }
 
-/* Tray */
+/* ── Tray ── */
 #tray {
 position: fixed;
 bottom: 48px; left: 0; right: 0;
@@ -49,16 +48,18 @@ z-index: 10;
 .thumb {
 flex-shrink: 0;
 height: 100px;
-background: #222;
 overflow: hidden;
 border-radius: 2px;
+background: #222;
+transition: transform 0.1s;
 }
 .thumb.loading { width: 80px; animation: pulse 1s ease-in-out infinite; }
-.thumb canvas  { display: block; height: 100%; width: auto; pointer-events: none; }
-@keyframes pulse { 0%,100%{opacity:.2} 50%{opacity:.5} }
+.thumb.transparent { background: repeating-conic-gradient(#333 0% 25%, #444 0% 50%) 0 0 / 10px 10px; }
+.thumb canvas { display: block; height: 100%; width: auto; pointer-events: none; }
+@keyframes pulse { 0%,100% { opacity:.2 } 50% { opacity:.5 } }
 
-/* Search */
-#search {
+/* ── Search bar ── */
+#searchbar {
 position: fixed;
 bottom: 0; left: 0; right: 0;
 height: 48px;
@@ -69,42 +70,43 @@ padding: 0 14px;
 gap: 10px;
 z-index: 10;
 }
-#search input {
+#searchbar input {
 flex: 1; height: 32px;
 background: #2a2a2a; border: none; border-radius: 16px;
-padding: 0 14px; color: #fff; font-size: 14px; font-family: monospace;
-outline: none;
+padding: 0 14px; color: #fff; font-size: 14px;
+font-family: monospace; outline: none;
 }
-#search input::placeholder { color: rgba(255,255,255,0.2); }
+#searchbar input::placeholder { color: rgba(255,255,255,0.2); }
 .icon-btn {
 width: 32px; height: 32px; border-radius: 50%;
 background: #2a2a2a; border: none;
 cursor: pointer; display: flex; align-items: center; justify-content: center;
-flex-shrink: 0; padding: 0;
+flex-shrink: 0; padding: 0; transition: background 0.1s;
 }
-.icon-btn svg { display: block; }
 .icon-btn:active { background: #3a3a3a; }
+.icon-btn svg { display: block; }
 
-/* FABs */
+/* ── FABs ── */
 .fab {
 position: fixed; width: 40px; height: 40px; border-radius: 50%;
 background: #111; border: none;
 display: flex; align-items: center; justify-content: center;
 z-index: 20; box-shadow: 0 2px 12px rgba(0,0,0,0.3);
-opacity: 0; pointer-events: none; transition: opacity 0.2s;
+opacity: 0; pointer-events: none;
+transition: opacity 0.2s, transform 0.1s;
 cursor: pointer; padding: 0;
 }
 .fab svg { display: block; }
 .fab.on { opacity: 1; pointer-events: auto; }
-.fab:active { transform: scale(0.9); }
+.fab:active { transform: scale(0.88); }
 #btn-save { right: 14px; }
-#btn-undo { left:  14px; }
+#btn-undo { left: 14px; }
 
-/* Ghost image that follows finger */
+/* ── Drag ghost ── */
 #ghost {
 position: fixed;
 pointer-events: none;
-z-index: 100;
+z-index: 999;
 display: none;
 transform-origin: center center;
 border-radius: 2px;
@@ -121,29 +123,27 @@ opacity: 0.88;
 <canvas id="c"></canvas>
 
 <div id="tray"></div>
-<div id="search">
-  <!-- search icon left of input -->
-  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style="flex-shrink:0;opacity:.35">
+
+<div id="searchbar">
+  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style="flex-shrink:0;opacity:.3">
     <circle cx="6.5" cy="6.5" r="4.5" stroke="white" stroke-width="1.5"/>
     <line x1="10" y1="10" x2="14.5" y2="14.5" stroke="white" stroke-width="1.5" stroke-linecap="round"/>
   </svg>
-  <input type="text" id="q" placeholder="" autocomplete="off" spellcheck="false">
-  <!-- submit search -->
-  <button class="icon-btn" id="search-btn" title="Buscar">
+  <input id="search-input" type="text" autocomplete="off" spellcheck="false">
+  <button class="icon-btn" id="btn-search">
     <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
       <polyline points="2,7 7,2 12,7" stroke="rgba(255,255,255,0.6)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
       <line x1="7" y1="2.5" x2="7" y2="12" stroke="rgba(255,255,255,0.6)" stroke-width="1.5" stroke-linecap="round"/>
     </svg>
   </button>
-  <!-- refresh tray -->
-  <button class="icon-btn" id="refresh-btn" title="Nuevas imágenes">
+  <button class="icon-btn" id="btn-refresh">
     <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
       <path d="M12 7A5 5 0 1 1 9 2.5" stroke="rgba(255,255,255,0.6)" stroke-width="1.5" stroke-linecap="round"/>
       <polyline points="9,1 9,3.5 11.5,3.5" stroke="rgba(255,255,255,0.6)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
     </svg>
   </button>
 </div>
-<!-- save: download arrow -->
+
 <button class="fab" id="btn-save">
   <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
     <line x1="8" y1="2" x2="8" y2="11" stroke="white" stroke-width="1.6" stroke-linecap="round"/>
@@ -151,78 +151,82 @@ opacity: 0.88;
     <line x1="2.5" y1="14" x2="13.5" y2="14" stroke="white" stroke-width="1.6" stroke-linecap="round"/>
   </svg>
 </button>
-<!-- undo: back arrow -->
+
 <button class="fab" id="btn-undo">
   <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
     <path d="M3.5 5.5 H9 a4 4 0 0 1 0 8 H5" stroke="white" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
     <polyline points="6.5,2.5 3.5,5.5 6.5,8.5" stroke="white" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
   </svg>
 </button>
+
 <div id="ghost"><canvas></canvas></div>
 
 <script>
-// ═══════════════════════════════════════════════════════
-// SETUP
-// ═══════════════════════════════════════════════════════
-const TRAY_H   = 130;
-const SEARCH_H = 48;
-const BOTTOM   = TRAY_H + SEARCH_H;
+'use strict';
 
-const cvs = document.getElementById('c');
+// ─────────────────────────────────────────────────────
+// CONFIG
+// ─────────────────────────────────────────────────────
+const CFG = {
+  TRAY_H:      130,
+  SEARCH_H:    48,
+  THUMB_H:     100,
+  THUMB_COUNT: 16,
+  ITEM_SCALE:  1.9,
+  ASPECTS:     [0.85, 1.1, 0.75, 1.25, 0.9, 1.0, 0.8, 1.15, 0.7, 1.3, 0.95, 1.05],
+  GIPHY_KEY:   'dc6zaTOxFJmzC',
+  PEXELS_KEY:  'uW3ruQAHsj1M7Rhfw3IDRuDU40jvHyNCGk3fK5zto4FirA3ux4xByn5Y',
+  REMOVEBG_KEY:'V6P4yToSRoNDfzXTVQmg9VRf',
+};
+const BOTTOM = CFG.TRAY_H + CFG.SEARCH_H;
+
+// ─────────────────────────────────────────────────────
+// CANVAS SETUP
+// ─────────────────────────────────────────────────────
+const cvs  = document.getElementById('c');
 const ctx  = cvs.getContext('2d');
+const tray = document.getElementById('tray');
 
 const ghost       = document.getElementById('ghost');
 const ghostCanvas = ghost.querySelector('canvas');
 const ghostCtx    = ghostCanvas.getContext('2d');
-const trayEl      = document.getElementById('tray');
 
 function resize() {
   cvs.width  = window.innerWidth;
   cvs.height = window.innerHeight - BOTTOM;
-  cvs.style.width  = cvs.width  + 'px';
-  cvs.style.height = cvs.height + 'px';
-  cvs.style.bottom = BOTTOM + 'px';
-  draw();
+  cvs.style.cssText = `width:${cvs.width}px;height:${cvs.height}px;bottom:${BOTTOM}px;`;
+  redraw();
 }
-window.addEventListener('resize', resize);
-// position FABs
+
 function positionFabs() {
   const y = window.innerHeight - BOTTOM - 12 - 40;
   document.getElementById('btn-save').style.top = y + 'px';
   document.getElementById('btn-undo').style.top = y + 'px';
 }
 
-// ═══════════════════════════════════════════════════════
-// WORLD STATE
-// panX, panY: world origin in canvas pixel space
-// zoom: scale
-// Canvas coords = world coords * zoom + pan
-// World coords  = (canvas coords - pan) / zoom
-// "Canvas coords" here = pixel coords within the <canvas> element
-// ═══════════════════════════════════════════════════════
+window.addEventListener('resize', () => { resize(); positionFabs(); });
+
+// ─────────────────────────────────────────────────────
+// WORLD / COORDINATE SYSTEM
+// world → canvas:  cx = wx * zoom + panX
+// canvas → world:  wx = (cx - panX) / zoom
+// ─────────────────────────────────────────────────────
 let panX = 0, panY = 0, zoom = 1;
 
-// canvas-element coords from client coords
-function clientToCanvas(cx, cy) {
+function clientToCanvas(sx, sy) {
   const r = cvs.getBoundingClientRect();
-  return [cx - r.left, cy - r.top];
+  return [sx - r.left, sy - r.top];
+}
+function canvasToWorld(cx, cy) { return [(cx - panX) / zoom, (cy - panY) / zoom]; }
+function worldToCanvas(wx, wy) { return [wx * zoom + panX, wy * zoom + panY]; }
+
+function applyWorld() {
+  // nothing to apply — world transform is baked into draw calls
 }
 
-// canvas coords → world coords
-function canvasToWorld(cx, cy) {
-  return [(cx - panX) / zoom, (cy - panY) / zoom];
-}
-
-// world coords → canvas coords
-function worldToCanvas(wx, wy) {
-  return [wx * zoom + panX, wy * zoom + panY];
-}
-
-// ═══════════════════════════════════════════════════════
-// ITEMS
-// Each item: { id, src, w, h, wx, wy, rot, sc, z }
-// wx/wy = world-space CENTER
-// ═══════════════════════════════════════════════════════
+// ─────────────────────────────────────────────────────
+// ITEMS  { id, src, w, h, wx, wy, rot, sc, z }
+// ─────────────────────────────────────────────────────
 let items     = [];
 let zTop      = 0;
 let idSeq     = 0;
@@ -234,222 +238,150 @@ function updateUI() {
   document.getElementById('btn-undo').classList.toggle('on', has);
 }
 
-// Parse and apply organic SVG path clip (normalized 0-1 coords)
-function applyOrgClip(ctx, path, w, h, ox=0, oy=0) {
-  const p2d = new Path2D();
-  // Parse SVG path: M, C, Z commands
-  const cmds = path.match(/[MCZL][^MCZL]*/g) || [];
-  for (const cmd of cmds) {
-    const type = cmd[0];
-    const nums = cmd.slice(1).trim().split(/[\s,]+/).filter(Boolean).map(Number);
-    if (type === 'M') {
-      p2d.moveTo(ox + nums[0]*w, oy + nums[1]*h);
-    } else if (type === 'L') {
-      p2d.lineTo(ox + nums[0]*w, oy + nums[1]*h);
-    } else if (type === 'C') {
-      for (let i=0;i<nums.length;i+=6)
-        p2d.bezierCurveTo(
-          ox+nums[i]*w,   oy+nums[i+1]*h,
-          ox+nums[i+2]*w, oy+nums[i+3]*h,
-          ox+nums[i+4]*w, oy+nums[i+5]*h
-        );
-    } else if (type === 'Z') {
-      p2d.closePath();
-    }
-  }
-  ctx.beginPath();
-  ctx.addPath ? ctx.addPath(p2d) : null;
-  // fallback: just clip the path directly
-  ctx.clip(p2d);
-}
-
-// ═══════════════════════════════════════════════════════
+// ─────────────────────────────────────────────────────
 // DRAW
-// ═══════════════════════════════════════════════════════
-function draw() {
+// ─────────────────────────────────────────────────────
+function redraw() {
   ctx.clearRect(0, 0, cvs.width, cvs.height);
 
-  // paper background
+  // Paper background
   ctx.fillStyle = '#f5f2ed';
   ctx.fillRect(0, 0, cvs.width, cvs.height);
 
-  // dot grid
+  // Dot grid
   ctx.fillStyle = 'rgba(0,0,0,0.07)';
   const gs = 32 * zoom;
   const ox = ((panX % gs) + gs) % gs;
   const oy = ((panY % gs) + gs) % gs;
   for (let x = ox; x < cvs.width + gs; x += gs)
     for (let y = oy; y < cvs.height + gs; y += gs) {
-      ctx.beginPath(); ctx.arc(x, y, 1, 0, Math.PI*2); ctx.fill();
+      ctx.beginPath();
+      ctx.arc(x, y, 1, 0, Math.PI * 2);
+      ctx.fill();
     }
 
-  // items sorted by z
-  const sorted = [...items].sort((a,b) => a.z - b.z);
-  for (const item of sorted) {
+  // Items sorted by z
+  for (const item of [...items].sort((a, b) => a.z - b.z)) {
     const [cx, cy] = worldToCanvas(item.wx, item.wy);
     ctx.save();
     ctx.translate(cx, cy);
-    ctx.rotate(item.rot * Math.PI/180);
+    ctx.rotate(item.rot * Math.PI / 180);
     ctx.scale(item.sc * zoom, item.sc * zoom);
-    // shadow (draw offscreen shadow rect first)
     ctx.shadowColor   = 'rgba(0,0,0,0.22)';
-    ctx.shadowBlur    = 16;
-    ctx.shadowOffsetY = 6;
+    ctx.shadowBlur    = 18;
     ctx.shadowOffsetX = 2;
-    // clip to irregular shape if available
-    if (item.clip) {
-      // translate clip to item center coords
-      applyOrgClip(ctx, item.clip, item.w, item.h, -item.w/2, -item.h/2);
-      ctx.fillStyle = 'rgba(0,0,0,0.001)';
-      ctx.fill();
-      ctx.shadowColor = 'transparent';
-      ctx.clip();
-    }
-    ctx.drawImage(item.src, -item.w/2, -item.h/2, item.w, item.h);
-    // Processing indicator
-    if (item.processing) {
-      ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0; ctx.shadowOffsetX = 0; ctx.shadowOffsetY = 0;
-      ctx.fillStyle = 'rgba(0,0,0,0.35)';
-      ctx.fillRect(-item.w/2, -item.h/2, item.w, item.h);
-      ctx.fillStyle = '#fff';
-      ctx.font = `${Math.min(item.w, item.h) * 0.12}px monospace`;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText('✂ recortando...', 0, 0);
-    }
+    ctx.shadowOffsetY = 7;
+    ctx.drawImage(item.src, -item.w / 2, -item.h / 2, item.w, item.h);
     ctx.restore();
   }
 }
 
-// ═══════════════════════════════════════════════════════
-// HIT TEST — find topmost item at canvas coords (cx, cy)
-// ═══════════════════════════════════════════════════════
+// ─────────────────────────────────────────────────────
+// HIT TEST  — returns topmost item at canvas coords
+// ─────────────────────────────────────────────────────
 function hitTest(cx, cy) {
-  // check in reverse z order (topmost first)
-  const sorted = [...items].sort((a,b) => b.z - a.z);
-  for (const item of sorted) {
+  for (const item of [...items].sort((a, b) => b.z - a.z)) {
     const [icx, icy] = worldToCanvas(item.wx, item.wy);
-    // transform point into item's local space
     const dx = cx - icx, dy = cy - icy;
-    const rad = -item.rot * Math.PI/180;
-    const lx = (dx*Math.cos(rad) - dy*Math.sin(rad)) / (item.sc * zoom);
-    const ly = (dx*Math.sin(rad) + dy*Math.cos(rad)) / (item.sc * zoom);
-    if (Math.abs(lx) <= item.w/2 && Math.abs(ly) <= item.h/2) return item;
+    const rad = -item.rot * Math.PI / 180;
+    const lx  = (dx * Math.cos(rad) - dy * Math.sin(rad)) / (item.sc * zoom);
+    const ly  = (dx * Math.sin(rad) + dy * Math.cos(rad)) / (item.sc * zoom);
+    if (Math.abs(lx) <= item.w / 2 && Math.abs(ly) <= item.h / 2) return item;
   }
   return null;
 }
 
-// ═══════════════════════════════════════════════════════
-// CANVAS TOUCH — pan, zoom, item drag & pinch
-// ═══════════════════════════════════════════════════════
-let activeTouches = {}; // id → {cx, cy, wx, wy}
-let panStart   = null;  // {panX, panY, cx0, cy0}
-let pinchStart = null;  // {panX, panY, zoom, d0, mx0, my0}
-let dragItem   = null;  // {item, tid, wx0, wy0, cx0, cy0}
-let pinchItem  = null;  // {item, tids, d0, sc0, wx0, wy0}
+// ─────────────────────────────────────────────────────
+// CANVAS INTERACTION  — pan, pinch-zoom, item drag/pinch
+// ─────────────────────────────────────────────────────
+let canvasTouches = {};
+let panStart      = null;  // canvas pan state
+let pinchStart    = null;  // canvas pinch state
+let dragItem      = null;  // { item, tid, cx0, cy0, wx0, wy0, moved }
+let pinchItem     = null;  // { item, tids[], d0, sc0, ang0, rot0 }
+let lastTap       = null;  // { id, time, cx, cy }
+let longTimer     = null;
 
-// Tap detection for z-order
-let lastTap = null; // {id, time, cx, cy}
-
+// Tap: single = advance one layer, double = send to back
 function handleTap(item, cx, cy) {
   const now = Date.now();
-  if (lastTap && lastTap.id === item.id && (now - lastTap.time) < 320
+  if (lastTap && lastTap.id === item.id
+      && now - lastTap.time < 320
       && Math.hypot(cx - lastTap.cx, cy - lastTap.cy) < 30) {
-    // double tap → send to back
-    // normalize all z values first, then set this one to 0
-    const sorted = [...items].sort((a,b) => a.z - b.z);
-    sorted.forEach((p, i) => { p.z = i; });
+    // Double tap — send to back
+    [...items].sort((a, b) => a.z - b.z).forEach((p, i) => { p.z = i; });
     item.z = -1;
     const min = Math.min(...items.map(p => p.z));
-    items.forEach(p => { p.z -= min; }); // shift so min = 0
+    items.forEach(p => { p.z -= min; });
     lastTap = null;
   } else {
-    // single tap → advance exactly one step past the next item above
-    // find the item with the lowest z that is still above this item
+    // Single tap — swap with next item above
     const above = items
       .filter(p => p.id !== item.id && p.z > item.z)
-      .sort((a,b) => a.z - b.z);
-    if (above.length > 0) {
-      // swap z values with the next item up
-      const next = above[0];
-      const tmp  = item.z;
-      item.z     = next.z;
-      next.z     = tmp;
-    } else {
-      // already on top — nothing to do
-    }
+      .sort((a, b) => a.z - b.z);
+    if (above.length) { const tmp = item.z; item.z = above[0].z; above[0].z = tmp; }
     lastTap = { id: item.id, time: now, cx, cy };
   }
-  draw();
+  redraw();
 }
 
 cvs.addEventListener('touchstart', e => {
   e.preventDefault();
-
   for (const t of e.changedTouches) {
     const [cx, cy] = clientToCanvas(t.clientX, t.clientY);
-    activeTouches[t.identifier] = { cx, cy };
+    canvasTouches[t.identifier] = { cx, cy };
   }
-
-  const ids = Object.keys(activeTouches);
 
   if (e.touches.length === 1) {
     const t = e.touches[0];
     const [cx, cy] = clientToCanvas(t.clientX, t.clientY);
     const hit = hitTest(cx, cy);
-
     if (hit) {
-      dragItem  = { item: hit, tid: t.identifier, wx0: hit.wx, wy0: hit.wy, cx0: cx, cy0: cy, moved: false };
-      pinchStart = null; panStart = null;
+      hit.z = ++zTop;
+      dragItem = { item: hit, tid: t.identifier, cx0: cx, cy0: cy, wx0: hit.wx, wy0: hit.wy, moved: false };
     } else {
-      panStart  = { panX, panY, cx0: cx, cy0: cy };
-      pinchStart = null; dragItem = null;
+      panStart = { panX, panY, cx0: cx, cy0: cy };
     }
 
   } else if (e.touches.length === 2) {
     const [ta, tb] = [e.touches[0], e.touches[1]];
     const [cxa, cya] = clientToCanvas(ta.clientX, ta.clientY);
     const [cxb, cyb] = clientToCanvas(tb.clientX, tb.clientY);
-
-    // check if both fingers are on the same item
-    const ha = hitTest(cxa, cya);
-    const hb = hitTest(cxb, cyb);
+    const ha = hitTest(cxa, cya), hb = hitTest(cxb, cyb);
 
     if (ha && hb && ha.id === hb.id) {
-      // pinch on item
-      dragItem = null; panStart = null; pinchStart = null;
-      const d   = Math.hypot(cxa-cxb, cya-cyb);
-      const ang = Math.atan2(cyb-cya, cxb-cxa);
+      // Pinch on item — scale + rotate
+      dragItem = null; panStart = null;
+      const d   = Math.hypot(cxa - cxb, cya - cyb);
+      const ang = Math.atan2(cyb - cya, cxb - cxa);
       pinchItem = { item: ha, tids: [ta.identifier, tb.identifier], d0: d, sc0: ha.sc, ang0: ang, rot0: ha.rot };
     } else {
-      // pinch on canvas
+      // Pinch on canvas — pan + zoom
       dragItem = null; pinchItem = null;
-      const d  = Math.hypot(cxa-cxb, cya-cyb);
-      const mx = (cxa+cxb)/2, my = (cya+cyb)/2;
+      const d  = Math.hypot(cxa - cxb, cya - cyb);
+      const mx = (cxa + cxb) / 2, my = (cya + cyb) / 2;
       pinchStart = { panX, panY, zoom, d0: d, mx0: mx, my0: my };
       panStart = null;
     }
   }
-
-  draw();
+  redraw();
 }, { passive: false });
 
 cvs.addEventListener('touchmove', e => {
   e.preventDefault();
-
   for (const t of e.changedTouches) {
     const [cx, cy] = clientToCanvas(t.clientX, t.clientY);
-    if (activeTouches[t.identifier]) activeTouches[t.identifier] = { cx, cy };
+    if (canvasTouches[t.identifier]) canvasTouches[t.identifier] = { cx, cy };
   }
 
   if (dragItem && e.touches.length === 1) {
     for (const t of e.touches) {
       if (t.identifier !== dragItem.tid) continue;
       const [cx, cy] = clientToCanvas(t.clientX, t.clientY);
-      const dcx = cx - dragItem.cx0, dcy = cy - dragItem.cy0;
-      if (Math.hypot(dcx, dcy) > 6) dragItem.moved = true;
-      dragItem.item.wx = dragItem.wx0 + dcx / zoom;
-      dragItem.item.wy = dragItem.wy0 + dcy / zoom;
+      const dx = cx - dragItem.cx0, dy = cy - dragItem.cy0;
+      if (Math.hypot(dx, dy) > 5) { dragItem.moved = true; clearTimeout(longTimer); }
+      dragItem.item.wx = dragItem.wx0 + dx / zoom;
+      dragItem.item.wy = dragItem.wy0 + dy / zoom;
     }
   }
 
@@ -460,19 +392,21 @@ cvs.addEventListener('touchmove', e => {
       if (t.identifier === pinchItem.tids[1]) tb = t;
     }
     if (ta && tb) {
-      const [cxa,cya] = clientToCanvas(ta.clientX, ta.clientY);
-      const [cxb,cyb] = clientToCanvas(tb.clientX, tb.clientY);
-      const d = Math.hypot(cxa-cxb, cya-cyb);
-      pinchItem.item.sc = Math.max(0.1, Math.min(6, pinchItem.sc0 * d / pinchItem.d0));
+      const [cxa, cya] = clientToCanvas(ta.clientX, ta.clientY);
+      const [cxb, cyb] = clientToCanvas(tb.clientX, tb.clientY);
+      const d   = Math.hypot(cxa - cxb, cya - cyb);
+      const ang = Math.atan2(cyb - cya, cxb - cxa);
+      pinchItem.item.sc  = Math.max(0.1, Math.min(6, pinchItem.sc0 * d / pinchItem.d0));
+      pinchItem.item.rot = pinchItem.rot0 + (ang - pinchItem.ang0) * 180 / Math.PI;
     }
   }
 
   if (pinchStart && e.touches.length >= 2) {
     const [ta, tb] = [e.touches[0], e.touches[1]];
-    const [cxa,cya] = clientToCanvas(ta.clientX, ta.clientY);
-    const [cxb,cyb] = clientToCanvas(tb.clientX, tb.clientY);
-    const d  = Math.hypot(cxa-cxb, cya-cyb);
-    const mx = (cxa+cxb)/2, my = (cya+cyb)/2;
+    const [cxa, cya] = clientToCanvas(ta.clientX, ta.clientY);
+    const [cxb, cyb] = clientToCanvas(tb.clientX, tb.clientY);
+    const d  = Math.hypot(cxa - cxb, cya - cyb);
+    const mx = (cxa + cxb) / 2, my = (cya + cyb) / 2;
     const nz = Math.max(0.08, Math.min(10, pinchStart.zoom * d / pinchStart.d0));
     const r  = nz / pinchStart.zoom;
     panX = mx - r * (pinchStart.mx0 - pinchStart.panX);
@@ -487,58 +421,59 @@ cvs.addEventListener('touchmove', e => {
     panY = panStart.panY + (cy - panStart.cy0);
   }
 
-  draw();
+  redraw();
 }, { passive: false });
 
 cvs.addEventListener('touchend', e => {
   e.preventDefault();
-  for (const t of e.changedTouches) delete activeTouches[t.identifier];
+  for (const t of e.changedTouches) delete canvasTouches[t.identifier];
   if (e.touches.length === 0) {
-    // If finger lifted off an item without moving → tap
-    if (dragItem && !dragItem.moved) {
-      handleTap(dragItem.item, dragItem.cx0, dragItem.cy0);
-    }
-    panStart = null; pinchStart = null; dragItem = null; pinchItem = null;
+    if (dragItem && !dragItem.moved) handleTap(dragItem.item, dragItem.cx0, dragItem.cy0);
+    dragItem = null; pinchItem = null; panStart = null; pinchStart = null;
+    clearTimeout(longTimer);
   }
-  draw();
+  if (e.touches.length < 2) pinchItem = null;
+  redraw();
 }, { passive: false });
 
-// Mouse (desktop)
-let mouseDown = false, mouseDragItem = null, mouseStart = null;
+// Mouse support (desktop)
+let mouseState = null; // { type: 'pan'|'drag', ... }
 let mouseClickItem = null;
+
 cvs.addEventListener('mousedown', e => {
   const [cx, cy] = clientToCanvas(e.clientX, e.clientY);
   const hit = hitTest(cx, cy);
   mouseClickItem = hit ? { item: hit, cx, cy, moved: false } : null;
   if (hit) {
     hit.z = ++zTop;
-    mouseDragItem = { item: hit, wx0: hit.wx, wy0: hit.wy, cx0: cx, cy0: cy };
+    mouseState = { type: 'drag', item: hit, cx0: cx, cy0: cy, wx0: hit.wx, wy0: hit.wy };
   } else {
-    mouseStart = { panX, panY, cx0: cx, cy0: cy };
+    mouseState = { type: 'pan', panX, panY, cx0: cx, cy0: cy };
   }
-  mouseDown = true;
 });
+
 document.addEventListener('mousemove', e => {
-  if (!mouseDown) return;
+  if (!mouseState) return;
   const [cx, cy] = clientToCanvas(e.clientX, e.clientY);
-  if (mouseDragItem) {
-    const dcx = cx - mouseDragItem.cx0, dcy = cy - mouseDragItem.cy0;
-    if (Math.hypot(dcx, dcy) > 4 && mouseClickItem) mouseClickItem.moved = true;
-    mouseDragItem.item.wx = mouseDragItem.wx0 + (cx - mouseDragItem.cx0) / zoom;
-    mouseDragItem.item.wy = mouseDragItem.wy0 + (cy - mouseDragItem.cy0) / zoom;
-  } else if (mouseStart) {
-    panX = mouseStart.panX + (cx - mouseStart.cx0);
-    panY = mouseStart.panY + (cy - mouseStart.cy0);
+  if (mouseState.type === 'drag') {
+    const dx = cx - mouseState.cx0, dy = cy - mouseState.cy0;
+    if (Math.hypot(dx, dy) > 4 && mouseClickItem) mouseClickItem.moved = true;
+    mouseState.item.wx = mouseState.wx0 + dx / zoom;
+    mouseState.item.wy = mouseState.wy0 + dy / zoom;
+  } else {
+    panX = mouseState.panX + (cx - mouseState.cx0);
+    panY = mouseState.panY + (cy - mouseState.cy0);
   }
-  draw();
+  redraw();
 });
-document.addEventListener('mouseup', e => {
-  if (mouseClickItem && !mouseClickItem.moved) {
+
+document.addEventListener('mouseup', () => {
+  if (mouseClickItem && !mouseClickItem.moved)
     handleTap(mouseClickItem.item, mouseClickItem.cx, mouseClickItem.cy);
-  }
   mouseClickItem = null;
-  mouseDown = false; mouseDragItem = null; mouseStart = null;
+  mouseState = null;
 });
+
 cvs.addEventListener('wheel', e => {
   e.preventDefault();
   const nz = Math.max(0.08, Math.min(10, zoom * (e.deltaY > 0 ? 0.9 : 1.1)));
@@ -546,181 +481,174 @@ cvs.addEventListener('wheel', e => {
   panX = cx - (cx - panX) * nz / zoom;
   panY = cy - (cy - panY) * nz / zoom;
   zoom = nz;
-  draw();
+  redraw();
 }, { passive: false });
 
-// ═══════════════════════════════════════════════════════
-// TRAY DRAG → DROP
-//
-// Ghost follows the finger.
-// On drop: ghost is a fixed-position div.
-// We read the canvas element's bounding rect,
-// subtract to get canvas-local coords of the ghost center,
-// then convert to world coords.
-// Simple. Reliable.
-// ═══════════════════════════════════════════════════════
-const ITEM_MULT = 1.8;
+// ─────────────────────────────────────────────────────
+// TRAY DRAG → CANVAS DROP
+// Ghost follows finger. On drop, reads ghost.getBoundingClientRect()
+// for the exact screen position — no event coordinate issues.
+// ─────────────────────────────────────────────────────
+let ghostSrc  = null;
+let ghostW    = 0;
+let ghostH    = 0;
+let ghostRot  = 0;
 
-let ghostSrc = null, ghostW = 0, ghostH = 0, ghostRot = 0;
-let trayDragTid = null, trayDragStartY = 0, trayDragStartX = 0;
-let trayDragActive = false, trayScrolling = false;
+// Touch drag from tray
+let trayTouchId     = null;
+let trayTouchStartX = 0;
+let trayTouchStartY = 0;
+let trayDragging    = false;
+let trayScrolling   = false;
 
-trayEl.addEventListener('touchstart', e => {
+tray.addEventListener('touchstart', e => {
   const thumb = e.target.closest('.thumb');
-  if (!thumb || !thumb._src) return;
+  if (!thumb?._src) return;
   const t = e.changedTouches[0];
-  trayDragTid    = t.identifier;
-  trayDragStartX = t.clientX;
-  trayDragStartY = t.clientY;
-  trayDragActive = false;
-  trayScrolling  = false;
+  trayTouchId     = t.identifier;
+  trayTouchStartX = t.clientX;
+  trayTouchStartY = t.clientY;
+  trayDragging    = false;
+  trayScrolling   = false;
 }, { passive: true });
 
-trayEl.addEventListener('touchmove', e => {
-  if (trayDragTid === null) return;
+tray.addEventListener('touchmove', e => {
+  if (trayTouchId === null) return;
   let t = null;
   for (const touch of e.touches)
-    if (touch.identifier === trayDragTid) { t = touch; break; }
+    if (touch.identifier === trayTouchId) { t = touch; break; }
   if (!t) return;
 
-  const dx = t.clientX - trayDragStartX;
-  const dy = trayDragStartY - t.clientY; // positive = up
+  const dx = t.clientX - trayTouchStartX;
+  const dy = trayTouchStartY - t.clientY; // positive = upward
 
-  if (!trayDragActive && !trayScrolling) {
-    if (Math.abs(dx) > Math.abs(dy) + 4) { trayScrolling = true; return; }
+  if (!trayDragging && !trayScrolling) {
+    if (Math.abs(dx) > Math.abs(dy) + 5) { trayScrolling = true; return; }
     if (dy > 12) {
-      // start ghost
       e.preventDefault();
-      const thumb = document.elementFromPoint(trayDragStartX, trayDragStartY)?.closest('.thumb');
+      const thumb = document.elementFromPoint(trayTouchStartX, trayTouchStartY)?.closest('.thumb');
       if (!thumb?._src) return;
-
-      ghostSrc  = thumb._src;
-      ghostW   = Math.round(thumb._w * ITEM_MULT);
-      ghostH   = Math.round(thumb._h * ITEM_MULT);
-      ghostRot = (Math.random() - 0.5) * 20;
-
-      ghost.style.width   = ghostW + 'px';
-      ghost.style.height  = ghostH + 'px';
-      ghost.style.transform = `rotate(${ghostRot}deg)`;
-      ghostCanvas.width   = ghostW;
-      ghostCanvas.height  = ghostH;
-      ghostCtx.clearRect(0, 0, ghostW, ghostH);
-      ghostCtx.drawImage(ghostSrc, 0, 0, ghostW, ghostH);
-
-      ghost.style.left    = (t.clientX - ghostW/2) + 'px';
-      ghost.style.top     = (t.clientY - ghostH/2) + 'px';
-      ghost.style.display = 'block';
-      trayDragActive = true;
+      startGhost(thumb, t.clientX, t.clientY);
+      trayDragging = true;
     }
     return;
   }
 
-  if (trayDragActive) {
+  if (trayDragging) {
     e.preventDefault();
-    ghost.style.left = (t.clientX - ghostW/2) + 'px';
-    ghost.style.top  = (t.clientY - ghostH/2) + 'px';
+    ghost.style.left = (t.clientX - ghostW / 2) + 'px';
+    ghost.style.top  = (t.clientY - ghostH / 2) + 'px';
   }
 }, { passive: false });
 
-trayEl.addEventListener('touchend', e => {
-  if (!trayDragActive) { trayDragTid = null; return; }
-
-  // ── KEY: use ghost's ACTUAL rendered rect center ──
-  // This is independent of event coordinates entirely.
-  const gr      = ghost.getBoundingClientRect();
-  const screenCX = gr.left + gr.width  / 2;
-  const screenCY = gr.top  + gr.height / 2;
-
-  ghost.style.display = 'none';
-  trayDragActive = false;
-  trayDragTid    = null;
-
-  // Convert ghost center (screen) → canvas-element coords → world coords
-  const [ccx, ccy] = clientToCanvas(screenCX, screenCY);
-  const [wx,  wy]  = canvasToWorld(ccx, ccy);
-
-  // Only place if the ghost center landed over the canvas
-  if (ccx < 0 || ccy < 0 || ccx > cvs.width || ccy > cvs.height) return;
-
-  items.push({ id: ++idSeq, src: ghostSrc, w: ghostW, h: ghostH, wx, wy, rot: ghostRot, sc: 1, z: ++zTop });
-  undoStack.push(idSeq);
-  updateUI();
-  draw();
+tray.addEventListener('touchend', e => {
+  if (trayDragging) commitDrop();
+  trayTouchId = null;
+  trayDragging = false;
 }, { passive: true });
 
-// Mouse drop from tray
-let mouseTrayDrag = false;
-trayEl.addEventListener('mousedown', e => {
+// Mouse drag from tray
+let mouseTrayActive = false;
+
+tray.addEventListener('mousedown', e => {
   const thumb = e.target.closest('.thumb');
   if (!thumb?._src) return;
   e.preventDefault();
-  ghostSrc  = thumb._src;
-  ghostW   = Math.round(thumb._w * ITEM_MULT);
-  ghostH   = Math.round(thumb._h * ITEM_MULT);
+  startGhost(thumb, e.clientX, e.clientY);
+  mouseTrayActive = true;
+});
+
+document.addEventListener('mousemove', e => {
+  if (!mouseTrayActive) return;
+  ghost.style.left = (e.clientX - ghostW / 2) + 'px';
+  ghost.style.top  = (e.clientY - ghostH / 2) + 'px';
+});
+
+document.addEventListener('mouseup', e => {
+  if (!mouseTrayActive) return;
+  mouseTrayActive = false;
+  commitDrop();
+});
+
+function startGhost(thumb, cx, cy) {
+  ghostSrc = thumb._src;
+  ghostW   = Math.round(thumb._w * CFG.ITEM_SCALE);
+  ghostH   = Math.round(thumb._h * CFG.ITEM_SCALE);
   ghostRot = (Math.random() - 0.5) * 20;
-  ghost.style.width  = ghostW + 'px';
-  ghost.style.height = ghostH + 'px';
-  ghost.style.transform = `rotate(${ghostRot}deg)`;
+
+  ghost.style.cssText = `
+    display: block;
+    width: ${ghostW}px; height: ${ghostH}px;
+    left: ${cx - ghostW / 2}px; top: ${cy - ghostH / 2}px;
+    transform: rotate(${ghostRot}deg);
+  `;
   ghostCanvas.width  = ghostW;
   ghostCanvas.height = ghostH;
   ghostCtx.clearRect(0, 0, ghostW, ghostH);
   ghostCtx.drawImage(ghostSrc, 0, 0, ghostW, ghostH);
-  ghost.style.left = (e.clientX - ghostW/2) + 'px';
-  ghost.style.top  = (e.clientY - ghostH/2) + 'px';
-  ghost.style.display = 'block';
-  mouseTrayDrag = true;
-});
-document.addEventListener('mousemove', e => {
-  if (!mouseTrayDrag) return;
-  ghost.style.left = (e.clientX - ghostW/2) + 'px';
-  ghost.style.top  = (e.clientY - ghostH/2) + 'px';
-});
-document.addEventListener('mouseup', e => {
-  if (!mouseTrayDrag) return;
-  mouseTrayDrag = false;
+}
+
+function commitDrop() {
+  // Read actual ghost position from DOM — reliable on all browsers
   const gr = ghost.getBoundingClientRect();
-  const screenCX = gr.left + gr.width/2;
-  const screenCY = gr.top  + gr.height/2;
+  const screenCX = gr.left + gr.width  / 2;
+  const screenCY = gr.top  + gr.height / 2;
   ghost.style.display = 'none';
+
   const [ccx, ccy] = clientToCanvas(screenCX, screenCY);
-  const [wx,  wy]  = canvasToWorld(ccx, ccy);
   if (ccx < 0 || ccy < 0 || ccx > cvs.width || ccy > cvs.height) return;
+
+  const [wx, wy] = canvasToWorld(ccx, ccy);
   items.push({ id: ++idSeq, src: ghostSrc, w: ghostW, h: ghostH, wx, wy, rot: ghostRot, sc: 1, z: ++zTop });
   undoStack.push(idSeq);
   updateUI();
-  draw();
-});
+  redraw();
+}
 
-// ═══════════════════════════════════════════════════════
-// KEYS & CONFIG
-// ═══════════════════════════════════════════════════════
-const PEXELS_KEY    = 'uW3ruQAHsj1M7Rhfw3IDRuDU40jvHyNCGk3fK5zto4FirA3ux4xByn5Y';
-const REMOVEBG_KEY  = 'V6P4yToSRoNDfzXTVQmg9VRf';
-const TRAY_THUMB_H  = 110;
-const TRAY_COUNT    = 16;
-const ASPECTS       = [0.85,1.1,0.75,1.25,0.9,1.0,0.8,1.15,0.7,1.3,0.95,1.05];
+// ─────────────────────────────────────────────────────
+// IMAGE SOURCES
+// Default: Giphy stickers (transparent GIFs, instant)
+// Search:  Pexels photos → remove.bg (uses credits)
+// ─────────────────────────────────────────────────────
 
-// ── Remove background via remove.bg ──────────────────
-// Returns a canvas with transparent background, or null on failure
+function urlToCanvas(url, tw, th) {
+  return new Promise(res => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      const c   = document.createElement('canvas');
+      c.width   = tw; c.height = th;
+      const ctx = c.getContext('2d');
+      const s   = Math.max(tw / img.naturalWidth, th / img.naturalHeight);
+      ctx.drawImage(img,
+        (img.naturalWidth  - tw / s) / 2,
+        (img.naturalHeight - th / s) / 2,
+        tw / s, th / s, 0, 0, tw, th);
+      res(c);
+    };
+    img.onerror = () => res(null);
+    img.src = url;
+  });
+}
+
 async function removeBg(srcCanvas) {
-  const blob = await new Promise(res => srcCanvas.toBlob(res, 'image/png'));
+  const blob = await new Promise(r => srcCanvas.toBlob(r, 'image/png'));
   const fd   = new FormData();
   fd.append('image_file', blob, 'image.png');
   fd.append('size', 'auto');
   try {
     const res = await fetch('https://api.remove.bg/v1.0/removebg', {
       method: 'POST',
-      headers: { 'X-Api-Key': REMOVEBG_KEY },
+      headers: { 'X-Api-Key': CFG.REMOVEBG_KEY },
       body: fd,
     });
     if (!res.ok) return null;
-    const rb  = await res.blob();
-    const url = URL.createObjectURL(rb);
+    const url = URL.createObjectURL(await res.blob());
     return new Promise(resolve => {
       const img = new Image();
       img.onload = () => {
-        const c   = document.createElement('canvas');
-        c.width   = srcCanvas.width; c.height = srcCanvas.height;
+        const c = document.createElement('canvas');
+        c.width = srcCanvas.width; c.height = srcCanvas.height;
         c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
         URL.revokeObjectURL(url);
         resolve(c);
@@ -731,66 +659,23 @@ async function removeBg(srcCanvas) {
   } catch { return null; }
 }
 
-// ── Load image URL into canvas ────────────────────────
-function urlToCanvas(url, tw, th) {
-  return new Promise(res => {
-    const img = new Image();
-    img.crossOrigin = 'anonymous';
-    img.onload = () => {
-      const c   = document.createElement('canvas');
-      c.width   = tw; c.height = th;
-      const ctx = c.getContext('2d');
-      const s   = Math.max(tw/img.naturalWidth, th/img.naturalHeight);
-      ctx.drawImage(img, (img.naturalWidth-tw/s)/2, (img.naturalHeight-th/s)/2, tw/s, th/s, 0, 0, tw, th);
-      res(c);
-    };
-    img.onerror = () => res(null);
-    img.src = url;
-  });
-}
-
-// ── Gradient fallback ─────────────────────────────────
-function makeFallback(seed, tw, th) {
-  const c = document.createElement('canvas'); c.width=tw; c.height=th;
-  const ctx = c.getContext('2d');
-  let s = seed|0;
-  const r = () => { s=(s*1664525+1013904223)&0xffffffff; return (s>>>0)/0xffffffff; };
-  const g = ctx.createLinearGradient(0,0,tw,th);
-  g.addColorStop(0,`hsl(${r()*360},45%,42%)`);
-  g.addColorStop(1,`hsl(${r()*360},55%,58%)`);
-  ctx.fillStyle=g; ctx.fillRect(0,0,tw,th);
-  return c;
-}
-
-// ── Draw thumb canvas into the visible small canvas ───
-function renderThumb(sk) {
-  const c = sk.querySelector('canvas');
-  if (!c) return;
-  const ctx = c.getContext('2d');
-  ctx.clearRect(0, 0, c.width, c.height);
-  if (sk._src) ctx.drawImage(sk._src, 0, 0, c.width, c.height);
-}
-
-// ── Skeleton helper ───────────────────────────────────
-function makeSkeleton(i, tw) {
+function makeThumb(i, tw) {
   const sk = document.createElement('div');
-  sk.className = 'thumb loading'; sk.id = 'sk'+i;
-  sk.style.width = tw+'px';
-  trayEl.appendChild(sk);
+  sk.className = 'thumb loading';
+  sk.id        = 'sk' + i;
+  sk.style.width = tw + 'px';
+  tray.appendChild(sk);
   return sk;
 }
 
-// ── Upgrade skeleton to loaded thumb ─────────────────
-function activateThumb(sk, src, tw, th) {
+function showThumb(sk, src, tw, th, isTransparent) {
   sk.classList.remove('loading');
-  sk.style.width  = tw+'px'; sk.style.height = th+'px';
+  sk.classList.toggle('transparent', isTransparent);
+  sk.style.width  = tw + 'px';
+  sk.style.height = th + 'px';
   sk._src = src; sk._w = tw; sk._h = th;
-  sk._clip = null; // no clip — transparency from remove.bg
-  sk.style.transform = `rotate(${(Math.random()-.5)*14}deg)`;
-  sk.style.marginTop  = (Math.random()-.5)*16+'px';
-
-  // background checkerboard so cutout is visible in tray
-  sk.style.background = 'repeating-conic-gradient(#ddd 0% 25%, #eee 0% 50%) 0 0 / 10px 10px';
+  sk.style.transform = `rotate(${(Math.random() - 0.5) * 14}deg)`;
+  sk.style.marginTop  = (Math.random() - 0.5) * 16 + 'px';
 
   let c = sk.querySelector('canvas');
   if (!c) {
@@ -799,105 +684,119 @@ function activateThumb(sk, src, tw, th) {
     sk.appendChild(c);
   }
   c.width = tw; c.height = th;
-  renderThumb(sk);
+  c.getContext('2d').clearRect(0, 0, tw, th);
+  c.getContext('2d').drawImage(src, 0, 0, tw, th);
 }
 
-// ═══════════════════════════════════════════════════════
-// TRAY POPULATION
-// ═══════════════════════════════════════════════════════
 async function loadTray(query) {
-  trayEl.innerHTML = '';
+  tray.innerHTML = '';
+  query ? await loadPexels(query) : await loadGiphy();
+}
 
-  // Fetch photos from Pexels
+async function loadGiphy() {
+  const count = CFG.THUMB_COUNT;
+  for (let i = 0; i < count; i++)
+    makeThumb(i, Math.round(CFG.THUMB_H * CFG.ASPECTS[i % CFG.ASPECTS.length]));
+
+  let stickers = [];
+  try {
+    const offset = Math.floor(Math.random() * 200);
+    const res  = await fetch(
+      `https://api.giphy.com/v1/stickers/trending?api_key=${CFG.GIPHY_KEY}&limit=${count}&offset=${offset}&rating=g`
+    );
+    stickers = (await res.json()).data || [];
+  } catch(e) { console.warn('Giphy error:', e); }
+
+  await Promise.all(stickers.map(async (s, i) => {
+    const sk = document.getElementById('sk' + i);
+    if (!sk) return;
+    const tw  = Math.round(CFG.THUMB_H * CFG.ASPECTS[i % CFG.ASPECTS.length]);
+    const th  = CFG.THUMB_H;
+    const url = s.images?.fixed_height_small?.url || s.images?.fixed_height?.url;
+    if (!url) return;
+    const src = await urlToCanvas(url, tw, th);
+    if (src && sk.isConnected) showThumb(sk, src, tw, th, true);
+  }));
+
+  for (let i = stickers.length; i < count; i++)
+    document.getElementById('sk' + i)?.remove();
+}
+
+async function loadPexels(query) {
+  const count = CFG.THUMB_COUNT;
+  for (let i = 0; i < count; i++)
+    makeThumb(i, Math.round(CFG.THUMB_H * CFG.ASPECTS[i % CFG.ASPECTS.length]));
+
   let photos = [];
   try {
-    const q   = query || 'people fashion portrait nature';
-    const url = `https://api.pexels.com/v1/search?query=${encodeURIComponent(q)}&per_page=${TRAY_COUNT}&orientation=portrait`;
-    const res = await fetch(url, { headers: { Authorization: PEXELS_KEY } });
-    const d   = await res.json();
-    photos = d.photos || [];
-  } catch(e) {}
+    const res = await fetch(
+      `https://api.pexels.com/v1/search?query=${encodeURIComponent(query)}&per_page=${count}&orientation=portrait`,
+      { headers: { Authorization: CFG.PEXELS_KEY } }
+    );
+    photos = (await res.json()).photos || [];
+  } catch(e) { console.warn('Pexels error:', e); }
 
-  if (!photos.length) {
-    try {
-      const res = await fetch(`https://api.pexels.com/v1/curated?per_page=${TRAY_COUNT}`, { headers: { Authorization: PEXELS_KEY } });
-      const d   = await res.json();
-      photos = d.photos || [];
-    } catch(e) {}
-  }
-
-  // Create skeletons
-  const thumbMeta = photos.map((_, i) => {
-    const ar = ASPECTS[i % ASPECTS.length];
-    const th = TRAY_THUMB_H;
-    const tw = Math.round(th * ar);
-    makeSkeleton(i, tw);
-    return { tw, th, i };
-  });
-
-  // Load full images + remove.bg in parallel, update tray as each finishes
-  thumbMeta.forEach(async ({ tw, th, i }) => {
-    const photo  = photos[i];
-    const imgUrl = photo?.src?.medium || photo?.src?.small;
-    if (!imgUrl) return;
-
-    // Step 1: load original image quickly
-    let src = await urlToCanvas(imgUrl, tw*2, th*2);
-    if (!src) src = makeFallback(photo?.id || i, tw*2, th*2);
-
-    const sk = document.getElementById('sk'+i);
+  // Show originals immediately, then upgrade with remove.bg
+  photos.forEach(async (photo, i) => {
+    const sk  = document.getElementById('sk' + i);
     if (!sk) return;
+    const tw  = Math.round(CFG.THUMB_H * CFG.ASPECTS[i % CFG.ASPECTS.length]);
+    const th  = CFG.THUMB_H;
+    const src = await urlToCanvas(photo.src?.medium || photo.src?.small, tw * 2, th * 2);
+    if (!src || !sk.isConnected) return;
 
-    // Show original first so tray isn't empty
-    activateThumb(sk, src, tw, th);
+    // Show with background first
+    showThumb(sk, src, tw, th, false);
 
-    // Step 2: remove background (async, updates thumb when done)
+    // Then remove background (async, 1 credit each)
     const cutout = await removeBg(src);
-    if (cutout && sk.isConnected) {
-      sk._src = cutout;
-      renderThumb(sk);
-    }
+    if (cutout && sk.isConnected) showThumb(sk, cutout, tw, th, true);
   });
+
+  for (let i = photos.length; i < count; i++)
+    document.getElementById('sk' + i)?.remove();
 }
 
-// ═══════════════════════════════════════════════════════
-// SEARCH / UNDO / SAVE
-// ═══════════════════════════════════════════════════════
-document.getElementById('search-btn').addEventListener('click', () => {
-  const q = document.getElementById('q').value.trim();
-  document.getElementById('q').blur();
+// ─────────────────────────────────────────────────────
+// CONTROLS
+// ─────────────────────────────────────────────────────
+document.getElementById('btn-search').addEventListener('click', () => {
+  const q = document.getElementById('search-input').value.trim();
+  document.getElementById('search-input').blur();
   loadTray(q);
 });
-document.getElementById('refresh-btn').addEventListener('click', () => {
-  document.getElementById('q').value = '';
+
+document.getElementById('btn-refresh').addEventListener('click', () => {
+  document.getElementById('search-input').value = '';
   loadTray('');
 });
-document.getElementById('q').addEventListener('keydown', e=>{
-  if(e.key==='Enter') document.getElementById('search-btn').click();
+
+document.getElementById('search-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter') document.getElementById('btn-search').click();
 });
 
-document.getElementById('btn-undo').addEventListener('click', ()=>{
+document.getElementById('btn-undo').addEventListener('click', () => {
   if (!undoStack.length) return;
   const id = undoStack.pop();
-  items = items.filter(p=>p.id!==id);
-  updateUI(); draw();
+  items = items.filter(p => p.id !== id);
+  updateUI();
+  redraw();
 });
 
-document.getElementById('btn-save').addEventListener('click', ()=>{
+document.getElementById('btn-save').addEventListener('click', () => {
   if (!items.length) return;
   const out = document.createElement('canvas');
-  out.width=cvs.width; out.height=cvs.height;
-  const oc=out.getContext('2d');
-  oc.drawImage(cvs,0,0);
-  const a=document.createElement('a');
-  a.download=`collage-${Date.now()}.png`;
-  a.href=out.toDataURL('image/png');
+  out.width = cvs.width; out.height = cvs.height;
+  out.getContext('2d').drawImage(cvs, 0, 0);
+  const a = document.createElement('a');
+  a.download = `collage-${Date.now()}.png`;
+  a.href = out.toDataURL('image/png');
   a.click();
 });
 
-// ═══════════════════════════════════════════════════════
+// ─────────────────────────────────────────────────────
 // INIT
-// ═══════════════════════════════════════════════════════
+// ─────────────────────────────────────────────────────
 resize();
 positionFabs();
 loadTray('');
