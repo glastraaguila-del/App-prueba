@@ -675,24 +675,36 @@ function activateThumb(sk, src, tw, th) {
 }
 
 async function fetchStickers(query) {
-  // Always use /stickers endpoint — guarantees transparent images
-  // Use trending for default (no query), search for specific terms
   const base   = 'https://api.giphy.com/v1/stickers';
   const offset = Math.floor(Math.random() * 100);
-  let url;
-  if (query) {
-    url = `${base}/search?api_key=${GIPHY_KEY}&q=${encodeURIComponent(query)}&limit=${THUMB_COUNT}&rating=g`;
-  } else {
-    url = `${base}/trending?api_key=${GIPHY_KEY}&limit=${THUMB_COUNT}&offset=${offset}&rating=g`;
-  }
+  const url    = query
+    ? `${base}/search?api_key=${GIPHY_KEY}&q=${encodeURIComponent(query)}&limit=${THUMB_COUNT}&rating=g`
+    : `${base}/trending?api_key=${GIPHY_KEY}&limit=${THUMB_COUNT}&offset=${offset}&rating=g`;
+
+  // Use no-cors mode — we only need the JSON metadata, not images
+  // If CORS blocks, fall back to JSONP via script tag
   try {
-    const res  = await fetch(url);
-    const data = await res.json();
-    return data.data || [];
-  } catch (e) {
-    console.warn('Giphy error:', e);
-    return [];
-  }
+    const res = await fetch(url, { mode: 'cors' });
+    if (res.ok) {
+      const data = await res.json();
+      return data.data || [];
+    }
+  } catch(e) {}
+
+  // JSONP fallback for environments that block CORS
+  return new Promise(resolve => {
+    const cb = '__giphy_' + Date.now();
+    window[cb] = data => {
+      delete window[cb];
+      document.getElementById(cb)?.remove();
+      resolve(data?.data || []);
+    };
+    const s = document.createElement('script');
+    s.id  = cb;
+    s.src = url + `&callback=${cb}`;
+    s.onerror = () => { delete window[cb]; s.remove(); resolve([]); };
+    document.head.appendChild(s);
+  });
 }
 
 async function loadTray(query = '') {
