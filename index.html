@@ -407,17 +407,61 @@ function loadImage(url, tw, th) {
   });
 }
 
+// removeBg: tries Hugging Face (free, any subject) then remove.bg as fallback
 async function removeBg(srcCanvas) {
+  // Try Hugging Face first — free tier, works on people/objects/animals/landscapes
+  const hfResult = await removeBgHuggingFace(srcCanvas);
+  if (hfResult) return hfResult;
+  // Fallback to remove.bg (50 free credits/month)
+  return await removeBgRemoveBg(srcCanvas);
+}
+
+async function removeBgHuggingFace(srcCanvas) {
   try {
-    const blob=await new Promise(r=>srcCanvas.toBlob(r,'image/png'));
-    const fd=new FormData(); fd.append('image_file',blob,'img.png'); fd.append('size','auto');
-    const res=await fetch('https://api.remove.bg/v1.0/removebg',{method:'POST',headers:{'X-Api-Key':REMOVEBG_KEY},body:fd});
+    const blob = await new Promise(r => srcCanvas.toBlob(r, 'image/png'));
+    const res  = await fetch(
+      'https://api-inference.huggingface.co/models/briaai/RMBG-1.4',
+      { method: 'POST', headers: { 'Content-Type': 'application/octet-stream' }, body: blob }
+    );
     if (!res.ok) return null;
-    const url=URL.createObjectURL(await res.blob());
-    return new Promise(resolve=>{
-      const img=new Image();
-      img.onload=()=>{ const c=document.createElement('canvas'); c.width=srcCanvas.width; c.height=srcCanvas.height; c.getContext('2d').drawImage(img,0,0,c.width,c.height); URL.revokeObjectURL(url); resolve(c); };
-      img.onerror=()=>{ URL.revokeObjectURL(url); resolve(null); }; img.src=url;
+    const url = URL.createObjectURL(await res.blob());
+    return new Promise(resolve => {
+      const img = new Image();
+      img.onload = () => {
+        const c = document.createElement('canvas');
+        c.width  = srcCanvas.width; c.height = srcCanvas.height;
+        const cx = c.getContext('2d');
+        cx.clearRect(0, 0, c.width, c.height);
+        cx.drawImage(img, 0, 0, c.width, c.height);
+        URL.revokeObjectURL(url); resolve(c);
+      };
+      img.onerror = () => { URL.revokeObjectURL(url); resolve(null); };
+      img.src = url;
+    });
+  } catch { return null; }
+}
+
+async function removeBgRemoveBg(srcCanvas) {
+  try {
+    const blob = await new Promise(r => srcCanvas.toBlob(r, 'image/png'));
+    const fd   = new FormData();
+    fd.append('image_file', blob, 'img.png'); fd.append('size', 'auto');
+    const res  = await fetch('https://api.remove.bg/v1.0/removebg',
+      { method:'POST', headers:{'X-Api-Key':REMOVEBG_KEY}, body:fd });
+    if (!res.ok) return null;
+    const url = URL.createObjectURL(await res.blob());
+    return new Promise(resolve => {
+      const img = new Image();
+      img.onload = () => {
+        const c = document.createElement('canvas');
+        c.width = srcCanvas.width; c.height = srcCanvas.height;
+        const cx = c.getContext('2d');
+        cx.clearRect(0, 0, c.width, c.height);
+        cx.drawImage(img, 0, 0, c.width, c.height);
+        URL.revokeObjectURL(url); resolve(c);
+      };
+      img.onerror = () => { URL.revokeObjectURL(url); resolve(null); };
+      img.src = url;
     });
   } catch { return null; }
 }
