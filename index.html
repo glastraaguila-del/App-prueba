@@ -675,11 +675,16 @@ function activateThumb(sk, src, tw, th) {
 }
 
 async function fetchStickers(query) {
+  // Always use /stickers endpoint — guarantees transparent images
+  // Use trending for default (no query), search for specific terms
   const base   = 'https://api.giphy.com/v1/stickers';
-  const offset = Math.floor(Math.random() * 200);
-  const url    = query
-    ? `${base}/search?api_key=${GIPHY_KEY}&q=${encodeURIComponent(query)}&limit=${THUMB_COUNT}&rating=g`
-    : `${base}/search?api_key=${GIPHY_KEY}&q=${encodeURIComponent(RAND_TERMS[Math.floor(Math.random()*RAND_TERMS.length)])}&limit=${THUMB_COUNT}&offset=${offset}&rating=g`;
+  const offset = Math.floor(Math.random() * 100);
+  let url;
+  if (query) {
+    url = `${base}/search?api_key=${GIPHY_KEY}&q=${encodeURIComponent(query)}&limit=${THUMB_COUNT}&rating=g`;
+  } else {
+    url = `${base}/trending?api_key=${GIPHY_KEY}&limit=${THUMB_COUNT}&offset=${offset}&rating=g`;
+  }
   try {
     const res  = await fetch(url);
     const data = await res.json();
@@ -692,25 +697,32 @@ async function fetchStickers(query) {
 
 async function loadTray(query = '') {
   tray.innerHTML = '';
-  const stickers = await fetchStickers(query);
 
-  // Create all skeletons first
-  stickers.forEach((_, i) => {
+  // Show skeletons immediately
+  for (let i = 0; i < THUMB_COUNT; i++) {
     const tw = Math.round(THUMB_H * ASPECTS[i % ASPECTS.length]);
     makeSkeleton(i, tw);
-  });
+  }
 
-  // Load images in parallel
+  const stickers = await fetchStickers(query);
+
+  // Load images in parallel, each updates its own skeleton when ready
   await Promise.all(stickers.map(async (s, i) => {
     const tw  = Math.round(THUMB_H * ASPECTS[i % ASPECTS.length]);
     const th  = THUMB_H;
-    // fixed_height_still = static PNG frame, always transparent for stickers
+    // fixed_height_still = static PNG — stickers guaranteed transparent
+    // downsampled_still is smaller/faster but lower quality
     const url = s.images?.fixed_height_still?.url
+             || s.images?.downsized_still?.url
              || s.images?.fixed_height?.url;
     if (!url) return;
     const src = await loadImage(url, tw, th);
-    if (src) activateThumb(document.getElementById('sk'+i), src, tw, th);
+    if (src) activateThumb(document.getElementById('sk' + i), src, tw, th);
   }));
+
+  // Remove unused skeletons (if fewer results than THUMB_COUNT)
+  for (let i = stickers.length; i < THUMB_COUNT; i++)
+    document.getElementById('sk' + i)?.remove();
 }
 
 // ─────────────────────────────────────────────────────
@@ -724,7 +736,9 @@ document.getElementById('btn-search').addEventListener('click', () => {
 
 document.getElementById('btn-refresh').addEventListener('click', () => {
   document.getElementById('q').value = '';
-  loadTray('');
+  // Pass a random term so we get fresh variety each refresh
+  const term = RAND_TERMS[Math.floor(Math.random() * RAND_TERMS.length)];
+  loadTray(term);
 });
 
 document.getElementById('q').addEventListener('keydown', e => {
