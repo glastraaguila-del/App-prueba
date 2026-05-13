@@ -1,266 +1,883 @@
 import { useState, useEffect, useCallback, useRef } from “react”;
 
-// ─── Constants ────────────────────────────────────────────────────────────────
 const COLS = 7;
-const BASE_TIME = 20;   // level 1 starts with 20s
-const STREAK_THRESHOLD = 8;
 
-// Rows calculated to fill screen: ~10 visible rows per level, growing by 2
-const LEVELS = [
-{ level: 1, rows: 10 },
-{ level: 2, rows: 12 },
-{ level: 3, rows: 14 },
-{ level: 4, rows: 16 },
-{ level: 5, rows: 18 },
-{ level: 6, rows: 20 },
-{ level: 7, rows: 22 },
-{ level: 8, rows: 24 },
-];
-
-// ─── Bubble skins ─────────────────────────────────────────────────────────────
+// Skin tints shift the bubble color subtly
 const SKINS = {
-classic: {
-name: “Clásica”, emoji: “🫧”, price: 0,
-gradient: “radial-gradient(circle at 38% 33%, rgba(255,255,255,0.62) 0%, rgba(208,228,246,0.50) 30%, rgba(165,198,228,0.68) 62%, rgba(128,165,200,0.82) 100%)”,
-glow: “rgba(60,100,140,0.22)”,
-},
-rose: {
-name: “Rosa”, emoji: “🌸”, price: 50,
-gradient: “radial-gradient(circle at 38% 33%, rgba(255,240,245,0.75) 0%, rgba(255,200,220,0.55) 30%, rgba(240,150,185,0.65) 62%, rgba(210,100,145,0.75) 100%)”,
-glow: “rgba(210,80,130,0.25)”,
-},
-gold: {
-name: “Dorada”, emoji: “✨”, price: 100,
-gradient: “radial-gradient(circle at 38% 33%, rgba(255,255,220,0.8) 0%, rgba(255,235,150,0.6) 30%, rgba(240,195,80,0.7) 62%, rgba(200,150,30,0.8) 100%)”,
-glow: “rgba(200,150,30,0.3)”,
-},
-neon: {
-name: “Neón”, emoji: “💚”, price: 150,
-gradient: “radial-gradient(circle at 38% 33%, rgba(220,255,230,0.8) 0%, rgba(150,255,190,0.6) 30%, rgba(60,220,130,0.68) 62%, rgba(20,170,90,0.8) 100%)”,
-glow: “rgba(20,170,90,0.3)”,
-},
+classic: { name: “Natural”, price: 0,   hue: null },
+warm:    { name: “Ámbar”,   price: 50,  hue: “sepia(0.3) hue-rotate(-15deg)” },
+frost:   { name: “Hielo”,   price: 100, hue: “hue-rotate(20deg) saturate(1.3)” },
+rose:    { name: “Rosa”,    price: 150, hue: “hue-rotate(-30deg) saturate(1.2)” },
 };
 
-// ─── Sound skins ──────────────────────────────────────────────────────────────
 const SOUND_SKINS = {
-classic: { name: “Clásico”, emoji: “💧”, price: 0 },
-metal:   { name: “Metálico”, emoji: “🔩”, price: 50 },
-exag:    { name: “Exagerado”, emoji: “💥”, price: 80 },
+classic: { name: “Suave”,     price: 0  },
+metal:   { name: “Metálico”,  price: 50 },
+exag:    { name: “Dramático”, price: 80 },
 };
 
-// ─── Storage helpers ──────────────────────────────────────────────────────────
 function store(key, val) { try { localStorage.setItem(key, JSON.stringify(val)); } catch {} }
 function load(key, def)  { try { const v = localStorage.getItem(key); return v ? JSON.parse(v) : def; } catch { return def; } }
-
-// ─── Haptic ───────────────────────────────────────────────────────────────────
 function haptic(type = “light”) {
-try {
-if (navigator.vibrate) {
-navigator.vibrate(type === “light” ? 8 : type === “medium” ? 20 : 40);
-}
-} catch {}
+try { if (navigator.vibrate) navigator.vibrate(type === “heavy” ? 18 : 8); } catch {}
 }
 
-// ─── Achievements ─────────────────────────────────────────────────────────────
-const ACHIEVEMENTS = [
-{ id: “first”,    emoji: “🎯”, name: “Primera burbuja”,    desc: “Revienta tu primera burbuja”,         check: (s) => s.totalPopped >= 1 },
-{ id: “sheet”,    emoji: “📄”, name: “Hoja completa”,      desc: “Completa una hoja entera”,             check: (s) => s.sheetsCompleted >= 1 },
-{ id: “combo10”,  emoji: “🔥”, name: “Combo x10”,          desc: “Alcanza un combo de 10”,               check: (s) => s.maxCombo >= 10 },
-{ id: “hundred”,  emoji: “💯”, name: “100 burbujas”,        desc: “Revienta 100 burbujas en total”,       check: (s) => s.totalPopped >= 100 },
-{ id: “thousand”, emoji: “🏆”, name: “1000 burbujas”,       desc: “Revienta 1000 burbujas en total”,      check: (s) => s.totalPopped >= 1000 },
-{ id: “streak”,   emoji: “⚡”, name: “En llamas”,           desc: “Activa el modo racha”,                 check: (s) => s.streakActivated >= 1 },
-{ id: “allskins”, emoji: “🎨”, name: “Coleccionista”,       desc: “Desbloquea todas las skins”,           check: (s) => s.unlockedSkins?.length >= Object.keys(SKINS).length },
-];
-
-// ─── Factories ────────────────────────────────────────────────────────────────
 let buid = 0;
-const makeBubble = () => ({ uid: buid++, popped: false, shineX: 16 + Math.random()*20, shineY: 9 + Math.random()*12, floatDelay: Math.random()*3, floatDuration: 2.4 + Math.random()*1.2 });
-const makeRows   = (rows) => Array.from({ length: rows }, () => Array.from({ length: COLS }, makeBubble));
-
-function makeConfetti() {
-return Array.from({ length: 80 }, (_, i) => ({
-id: i, x: Math.random()*100,
-color: [”#ff6b6b”,”#ffd93d”,”#6bcb77”,”#4d96ff”,”#ff6bcd”,”#fff”,”#ffaa00”][i%7],
-size: 5 + Math.random()*9, delay: Math.random()*1, duration: 1.6 + Math.random()*1.4,
-drift: (Math.random()-0.5)*60, rot: Math.random()*360, shape: Math.random()>0.4?“rect”:“circle”,
-}));
-}
+const makeBubble = () => ({
+uid: buid++,
+popped: false,
+rnd:  Math.random(),
+rnd2: Math.random(),
+// unique pitch offset per bubble: ±15% — brain detects repetition instantly
+pitchSeed: 0.85 + Math.random() * 0.30,
+// ~1 in 18 bubbles is “special” — deeper pop, extra haptic
+special: Math.random() < 0.055,
+});
+const makeRows = (n) => Array.from({ length: n }, () => Array.from({ length: COLS }, makeBubble));
 
 let spid = 0;
-function makeSplash(cx, cy) {
-return Array.from({ length: 8 }, () => {
-const a = Math.random()*Math.PI*2, spd = 18 + Math.random()*32;
-return { id: spid++, cx, cy, vx: Math.cos(a)*spd, vy: Math.sin(a)*spd, size: 2.5 + Math.random()*5 };
+const makeSplash = (cx, cy, special = false) =>
+Array.from({ length: special ? 8 : 5 }, () => {
+const a = Math.random() * Math.PI * 2, spd = (special ? 14 : 10) + Math.random() * 22;
+return { id: spid++, cx, cy, vx: Math.cos(a) * spd, vy: Math.sin(a) * spd, size: (special ? 3 : 2) + Math.random() * 3 };
 });
-}
 
-function getNextLevel(cur) {
-const idx = LEVELS.findIndex(l => l.level === cur.level);
-return idx < LEVELS.length-1 ? LEVELS[idx+1] : LEVELS[idx];
-}
-
-// ─── Sound engine ─────────────────────────────────────────────────────────────
-function useSound(soundSkin) {
+// ─── Sound engine — layered pop ───────────────────────────────────────────────
+// Three simultaneous layers per pop:
+//   1. Body thud — low sine, the “mass” of the bubble
+//   2. Air release — filtered noise burst, the “breath”
+//   3. Plastic click — very short triangle transient
+// Each bubble gets a unique pitchSeed so no two pops sound identical.
+// pressDuration (ms) affects the character: slow press = deeper/wetter, fast = snappier.
+function useSound() {
 const actx = useRef(null);
-return useCallback((combo = 1) => {
+
+return useCallback((pitchSeed = 1.0, special = false, pressDuration = 80) => {
 try {
 if (!actx.current) actx.current = new (window.AudioContext || window.webkitAudioContext)();
-const ac = actx.current; const now = ac.currentTime;
-const skin = soundSkin || “classic”;
+const ac = actx.current, now = ac.currentTime;
 
 ```
-  if (skin === "classic") {
-    const p = 0.75 + Math.random()*0.5;
-    const o = ac.createOscillator(); const g = ac.createGain();
-    o.connect(g); g.connect(ac.destination); o.type = "sine";
-    o.frequency.setValueAtTime(180*p, now); o.frequency.exponentialRampToValueAtTime(45, now+0.09);
-    g.gain.setValueAtTime(0.32, now); g.gain.exponentialRampToValueAtTime(0.001, now+0.13);
-    o.start(now); o.stop(now+0.13);
-    const bl = Math.floor(ac.sampleRate*0.08); const buf = ac.createBuffer(1,bl,ac.sampleRate);
-    const d = buf.getChannelData(0); for(let i=0;i<bl;i++) d[i]=Math.random()*2-1;
-    const ns = ac.createBufferSource(); ns.buffer=buf;
-    const hpf = ac.createBiquadFilter(); hpf.type="highpass"; hpf.frequency.value=1400;
-    const gn = ac.createGain(); ns.connect(hpf); hpf.connect(gn); gn.connect(ac.destination);
-    gn.gain.setValueAtTime(0.12,now); gn.gain.exponentialRampToValueAtTime(0.001,now+0.08);
-    ns.start(now); ns.stop(now+0.08);
-  } else if (skin === "metal") {
-    const p = 1.2 + Math.random()*0.3;
-    const o = ac.createOscillator(); const g = ac.createGain();
-    o.connect(g); g.connect(ac.destination); o.type = "square";
-    o.frequency.setValueAtTime(400*p, now); o.frequency.exponentialRampToValueAtTime(80, now+0.06);
-    g.gain.setValueAtTime(0.15, now); g.gain.exponentialRampToValueAtTime(0.001, now+0.08);
-    o.start(now); o.stop(now+0.08);
-    const o2 = ac.createOscillator(); const g2 = ac.createGain();
-    o2.connect(g2); g2.connect(ac.destination); o2.type="sawtooth";
-    o2.frequency.setValueAtTime(600*p,now); o2.frequency.exponentialRampToValueAtTime(120,now+0.04);
-    g2.gain.setValueAtTime(0.1,now); g2.gain.exponentialRampToValueAtTime(0.001,now+0.05);
-    o2.start(now); o2.stop(now+0.05);
-  } else if (skin === "exag") {
-    const p = 0.5 + Math.random()*0.4;
-    const o = ac.createOscillator(); const g = ac.createGain();
-    o.connect(g); g.connect(ac.destination); o.type="sine";
-    o.frequency.setValueAtTime(300*p,now); o.frequency.exponentialRampToValueAtTime(20,now+0.25);
-    g.gain.setValueAtTime(0.5,now); g.gain.exponentialRampToValueAtTime(0.001,now+0.3);
-    o.start(now); o.stop(now+0.3);
-    const o2 = ac.createOscillator(); const g2=ac.createGain();
-    o2.connect(g2); g2.connect(ac.destination); o2.type="triangle";
-    o2.frequency.setValueAtTime(800*p,now); o2.frequency.exponentialRampToValueAtTime(50,now+0.15);
-    g2.gain.setValueAtTime(0.25,now); g2.gain.exponentialRampToValueAtTime(0.001,now+0.18);
-    o2.start(now); o2.stop(now+0.18);
+  // How "slow" was the press? 0=instant, 1=very slow (>300ms)
+  const slowness = Math.min(pressDuration / 300, 1);
+
+  const baseFreq = special ? 72 : 95 + slowness * (-22); // slower = lower pitch
+  const f = baseFreq * pitchSeed;
+
+  // ── Layer 1: body thud ──
+  // Sine drops quickly — the "pop" mass. Slower press = longer decay.
+  const o1 = ac.createOscillator(), g1 = ac.createGain();
+  o1.connect(g1); g1.connect(ac.destination);
+  o1.type = "sine";
+  o1.frequency.setValueAtTime(f, now);
+  o1.frequency.exponentialRampToValueAtTime(f * 0.38, now + 0.14 + slowness * 0.08);
+  g1.gain.setValueAtTime(0, now);
+  g1.gain.linearRampToValueAtTime(special ? 0.42 : 0.32, now + 0.006);
+  g1.gain.exponentialRampToValueAtTime(0.001, now + 0.20 + slowness * 0.10);
+  o1.start(now); o1.stop(now + 0.32);
+
+  // ── Layer 2: sub thud (octave below) — warmth ──
+  const o2 = ac.createOscillator(), g2 = ac.createGain();
+  o2.connect(g2); g2.connect(ac.destination);
+  o2.type = "sine";
+  o2.frequency.setValueAtTime(f * 0.5, now);
+  o2.frequency.exponentialRampToValueAtTime(f * 0.18, now + 0.16);
+  g2.gain.setValueAtTime(0, now);
+  g2.gain.linearRampToValueAtTime(special ? 0.22 : 0.14, now + 0.008);
+  g2.gain.exponentialRampToValueAtTime(0.001, now + 0.22);
+  o2.start(now); o2.stop(now + 0.26);
+
+  // ── Layer 3: air release — bandpass noise ──
+  // Centred ~600-900 Hz, very short. Fast press = more air, slow = less.
+  const noiseLen = Math.floor(ac.sampleRate * (0.04 + (1 - slowness) * 0.04));
+  const buf = ac.createBuffer(1, noiseLen, ac.sampleRate);
+  const nd = buf.getChannelData(0);
+  for (let i = 0; i < noiseLen; i++) nd[i] = Math.random() * 2 - 1;
+  const ns = ac.createBufferSource(); ns.buffer = buf;
+  const bpf = ac.createBiquadFilter();
+  bpf.type = "bandpass";
+  bpf.frequency.value = 680 + pitchSeed * 180;  // varies per bubble
+  bpf.Q.value = 1.8;
+  const gn = ac.createGain();
+  ns.connect(bpf); bpf.connect(gn); gn.connect(ac.destination);
+  const airVol = special ? 0.10 : 0.065 + (1 - slowness) * 0.03;
+  gn.gain.setValueAtTime(airVol, now);
+  gn.gain.exponentialRampToValueAtTime(0.001, now + 0.07 + (1 - slowness) * 0.04);
+  ns.start(now); ns.stop(now + 0.12);
+
+  // ── Layer 4: plastic click — ultra-short triangle transient ──
+  const o4 = ac.createOscillator(), g4 = ac.createGain();
+  o4.connect(g4); g4.connect(ac.destination);
+  o4.type = "triangle";
+  o4.frequency.setValueAtTime(f * 3.2, now);
+  o4.frequency.exponentialRampToValueAtTime(f * 1.1, now + 0.018);
+  g4.gain.setValueAtTime(special ? 0.18 : 0.11, now);
+  g4.gain.exponentialRampToValueAtTime(0.001, now + 0.022);
+  o4.start(now); o4.stop(now + 0.025);
+
+  // ── Special: extra low resonance ──
+  if (special) {
+    const os = ac.createOscillator(), gs = ac.createGain();
+    os.connect(gs); gs.connect(ac.destination);
+    os.type = "sine"; os.frequency.setValueAtTime(38, now);
+    gs.gain.setValueAtTime(0.28, now); gs.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
+    os.start(now); os.stop(now + 0.38);
   }
 } catch {}
 ```
 
-}, [soundSkin]);
+}, []);
 }
 
-// ─── Animated score counter ───────────────────────────────────────────────────
+// ─── Ambient music engine ─────────────────────────────────────────────────────
+function useZenMusic() {
+const actx    = useRef(null);
+const nodes   = useRef([]);
+const started = useRef(false);
+const noteTimer = useRef(null); // setTimeout for next piano note
+
+const start = useCallback(() => {
+if (started.current) return;
+try {
+if (!actx.current) actx.current = new (window.AudioContext || window.webkitAudioContext)();
+const ac = actx.current;
+if (ac.state === “suspended”) ac.resume();
+started.current = true;
+
+```
+  // ── Brown noise (looping, continuous) ────────────────────────────
+  // Use shorter buffer to avoid stack overflow on Math.max spread
+  const SR     = ac.sampleRate;
+  const bufLen = SR * 3; // 3s loop
+  const buf    = ac.createBuffer(1, bufLen, SR);
+  const data   = buf.getChannelData(0);
+  let last = 0;
+  for (let i = 0; i < bufLen; i++) {
+    const w = (Math.random() * 2 - 1) * 0.02;
+    data[i] = (last + w) / 1.02;
+    last = data[i];
+  }
+  // Normalize without spread (avoids call stack overflow)
+  let peak = 0;
+  for (let i = 0; i < bufLen; i++) { const a = Math.abs(data[i]); if (a > peak) peak = a; }
+  if (peak > 0) for (let i = 0; i < bufLen; i++) data[i] /= peak;
+
+  const noise = ac.createBufferSource();
+  noise.buffer = buf; noise.loop = true;
+  const lpf = ac.createBiquadFilter(); lpf.type = "lowpass"; lpf.frequency.value = 600;
+  const masterGain = ac.createGain(); masterGain.gain.value = 0.07;
+  noise.connect(lpf); lpf.connect(masterGain); masterGain.connect(ac.destination);
+  noise.start();
+  nodes.current.push(noise);
+
+  // ── Sparse piano (pentatonic minor, very soft) ───────────────────
+  const pentatonic = [130.81, 155.56, 174.61, 196.00, 233.08, 261.63];
+  const playNote = () => {
+    // Guard: stop if engine was shut down
+    if (!actx.current || !started.current) return;
+    const now = actx.current.currentTime;
+    const freq = pentatonic[Math.floor(Math.random() * pentatonic.length)];
+    const vol  = 0.035 + Math.random() * 0.035;
+
+    const o  = actx.current.createOscillator();
+    const g  = actx.current.createGain();
+    const o2 = actx.current.createOscillator();
+    const g2 = actx.current.createGain();
+
+    o.type = "sine";  o.frequency.value = freq;
+    o2.type = "sine"; o2.frequency.value = freq * 2;
+    o.connect(g);   g.connect(actx.current.destination);
+    o2.connect(g2); g2.connect(actx.current.destination);
+
+    g.gain.setValueAtTime(0, now);
+    g.gain.linearRampToValueAtTime(vol, now + 0.04);
+    g.gain.exponentialRampToValueAtTime(0.001, now + 3.5);
+
+    g2.gain.setValueAtTime(0, now);
+    g2.gain.linearRampToValueAtTime(vol * 0.2, now + 0.04);
+    g2.gain.exponentialRampToValueAtTime(0.001, now + 1.8);
+
+    o.start(now);  o.stop(now + 4);
+    o2.start(now); o2.stop(now + 2);
+    nodes.current.push(o, o2);
+
+    // Next note in 4-10s
+    noteTimer.current = setTimeout(playNote, 4000 + Math.random() * 6000);
+  };
+
+  // First note after 1.5s
+  noteTimer.current = setTimeout(playNote, 1500);
+
+} catch(e) { console.error("Music start error:", e); }
+```
+
+}, []);
+
+const stop = useCallback(() => {
+try {
+clearTimeout(noteTimer.current);
+started.current = false;
+nodes.current.forEach(n => { try { n.stop(); } catch {} });
+nodes.current = [];
+// Don’t close AudioContext — reuse it on restart to avoid policy issues
+} catch {}
+}, []);
+
+// Full teardown (on unmount only)
+const destroy = useCallback(() => {
+stop();
+try {
+if (actx.current) { actx.current.close(); actx.current = null; }
+} catch {}
+}, [stop]);
+
+return { start, stop, destroy };
+}
+
+// ─── Scroll ASMR sound ────────────────────────────────────────────────────────
+// Reference: soft paper/plastic sheet sliding — warm mid-frequency rustle
+// Lower freq (600-1000Hz), longer duration (120ms), gentle fade in+out
+function useScrollSound() {
+const actx      = useRef(null);
+const lastPlay  = useRef(0);
+
+const play = useCallback(() => {
+try {
+if (!actx.current) actx.current = new (window.AudioContext || window.webkitAudioContext)();
+const ac = actx.current;
+if (ac.state === “suspended”) ac.resume();
+const now = ac.currentTime;
+const SR  = ac.sampleRate;
+
+```
+  // Longer noise burst — 120ms, sounds like paper sliding
+  const len = Math.floor(SR * 0.12);
+  const buf = ac.createBuffer(1, len, SR);
+  const d   = buf.getChannelData(0);
+
+  // Shape: fade in 20%, sustain 40%, fade out 40%
+  for (let i = 0; i < len; i++) {
+    let env;
+    const pos = i / len;
+    if (pos < 0.2)      env = pos / 0.2;
+    else if (pos < 0.6) env = 1.0;
+    else                env = 1 - (pos - 0.6) / 0.4;
+    d[i] = (Math.random() * 2 - 1) * env;
+  }
+
+  const ns = ac.createBufferSource(); ns.buffer = buf;
+
+  // Two-stage filter: warm bandpass then subtle low-shelf boost
+  const bpf = ac.createBiquadFilter();
+  bpf.type = "bandpass";
+  bpf.frequency.value = 700 + Math.random() * 400; // 700-1100Hz — warm paper range
+  bpf.Q.value = 0.6; // wider = more natural
+
+  const lsf = ac.createBiquadFilter();
+  lsf.type = "lowshelf"; lsf.frequency.value = 300; lsf.gain.value = 3;
+
+  const g = ac.createGain();
+  ns.connect(bpf); bpf.connect(lsf); lsf.connect(g); g.connect(ac.destination);
+
+  g.gain.setValueAtTime(0.038, now);
+  g.gain.linearRampToValueAtTime(0.042, now + 0.05);
+  g.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
+
+  ns.start(now); ns.stop(now + 0.13);
+} catch {}
+```
+
+}, []);
+
+// Throttle: max once per 150ms (smooth but not rapid-fire)
+const onScroll = useCallback(() => {
+const now = Date.now();
+if (now - lastPlay.current > 150) {
+lastPlay.current = now;
+play();
+}
+}, [play]);
+
+return { onScroll };
+}
+
 function useAnimatedScore(target) {
 const [display, setDisplay] = useState(target);
 const prev = useRef(target);
 useEffect(() => {
 const diff = target - prev.current;
 if (diff <= 0) { setDisplay(target); prev.current = target; return; }
-const steps = Math.min(diff, 8);
-let i = 0;
-const iv = setInterval(() => {
-i++;
-setDisplay(Math.round(prev.current + (diff * i) / steps));
-if (i >= steps) { clearInterval(iv); prev.current = target; }
-}, 30);
-return () => clearInterval(iv);
+const steps = Math.min(diff, 8); let i = 0;
+const id = setInterval(() => {
+i++; setDisplay(Math.round(prev.current + diff * i / steps));
+if (i >= steps) { clearInterval(id); prev.current = target; }
+}, 28);
+return () => clearInterval(id);
 }, [target]);
 return display;
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// ACHIEVEMENT TOAST
-// ═══════════════════════════════════════════════════════════════════════════════
-function AchievementToast({ achievement, onDone }) {
-useEffect(() => { const t = setTimeout(onDone, 2800); return () => clearTimeout(t); }, []);
-return (
-<div style={st.achToast}>
-<span style={{ fontSize: 24 }}>{achievement.emoji}</span>
-<div>
-<div style={st.achName}>{achievement.name}</div>
-<div style={st.achDesc}>{achievement.desc}</div>
-</div>
-</div>
-);
+function useGameLogic() {
+const playSound = useSound();
+const updateStats = useCallback((patch) => {
+const prev = load(“stats”, { totalPopped: 0, maxCombo: 0 });
+const next = { …prev };
+for (const [k, v] of Object.entries(patch))
+next[k] = k === “maxCombo” ? Math.max(next[k] || 0, v) : (next[k] || 0) + v;
+store(“stats”, next);
+if (patch.totalPopped) store(“coins”, load(“coins”, 0) + Math.floor(patch.totalPopped / 10));
+}, []);
+return { playSound, updateStats };
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// HOME SCREEN
+// BUBBLE SVGs
+// Strategy: match the reference screenshot’s blue-grey volumetric look.
+// - Background and bubble backing are the SAME color (B.bg)
+// - Each bubble is a dome lit from top-left: bright highlight top, shadow bottom
+// - Popped: flat crumpled disc, lighter than background, with white wrinkle lines
 // ═══════════════════════════════════════════════════════════════════════════════
-function HomeScreen({ onSelect, onShop, onStats, onAchievements, onSettings }) {
-const hsInf = load(“hs_chill”, 0);
-const hsTime = load(“hs_time”, 0);
-const [floaters] = useState(() => Array.from({ length: 10 }, (_, i) => ({
-id: i, x: 5 + Math.random()*90, size: 20 + Math.random()*35,
-delay: Math.random()*4, duration: 4 + Math.random()*4,
-})));
+
+// B = bubble palette
+const B = {
+rimStroke:  “rgba(148,138,118,0.52)”,
+flatStroke: “rgba(130,118,96,0.36)”,
+wrinkleHi:  “rgba(255,254,250,0.82)”,
+wrinkleSh:  “rgba(100,86,64,0.24)”,
+};
+
+// ── INTACT BUBBLE ─────────────────────────────────────────────────────────────
+// From reference: almost fully transparent, background visible through dome.
+// Key features: thin rim, one diagonal bright crease (plastic stretched), faint haze.
+function IntactBubble({ size, skinFilter, rnd = 0.5, rnd2 = 0.5, pressed, special = false }) {
+const uid = useRef(`b${(Math.random()*1e9|0).toString(36)}`).current;
+
+// Each bubble gets a slightly different crease angle and position
+const creaseAngle = -50 + rnd * 40;          // −50 to −10 deg
+const cCx = 30 + rnd * 18;                    // crease centre x
+const cCy = 22 + rnd2 * 14;                   // crease centre y
+const cRx = 14 + rnd * 9;                     // crease half-width
+const cRy = 4.5 + rnd2 * 2.5;                // crease half-height
+
+// Occasional second short crease (lower area)
+const hasCrk2 = rnd2 > 0.38;
+const c2x = 52 + rnd * 14;
+const c2y = 56 + rnd2 * 10;
 
 return (
-<div style={st.root}>
-<style>{css}</style>
-<div style={st.bg} />
-{floaters.map(f => (
-<div key={f.id} className=“homeBubble” style={{
-position:“fixed”, bottom:”-60px”, left:`${f.x}%`,
-width: f.size, height: f.size, borderRadius:“50%”, pointerEvents:“none”, zIndex:0,
-background:“radial-gradient(circle at 38% 33%, rgba(255,255,255,0.55) 0%, rgba(200,225,248,0.4) 40%, rgba(160,195,230,0.55) 100%)”,
-boxShadow:“0 2px 8px rgba(80,120,180,0.12)”,
-animationDelay:`${f.delay}s`, animationDuration:`${f.duration}s`,
-}} />
+<svg viewBox=“0 0 100 100” width={size} height={size}
+style={{
+display:“block”,
+filter: skinFilter || undefined,
+transform: pressed ? “scale(0.84)” : “scale(1)”,
+transition: pressed ? “transform 0.05s ease-out” : “transform 0.18s cubic-bezier(.34,1.5,.64,1)”,
+}}>
+<defs>
+{/* Rim gradient: nearly invisible at centre, slightly opaque at edge */}
+<radialGradient id={`r_${uid}`} cx=“50%” cy=“50%” r=“50%”>
+<stop offset="0%"   stopColor="rgba(255,255,255,0.00)"/>
+<stop offset="74%"  stopColor="rgba(230,220,205,0.05)"/>
+<stop offset="90%"  stopColor="rgba(195,182,160,0.20)"/>
+<stop offset="97%"  stopColor="rgba(165,150,128,0.42)"/>
+<stop offset="100%" stopColor="rgba(145,130,108,0.58)"/>
+</radialGradient>
+
+```
+    {/* Crease highlight gradient */}
+    <radialGradient id={`c_${uid}`} cx="50%" cy="50%" r="50%">
+      <stop offset="0%"   stopColor="rgba(255,255,255,0.90)"/>
+      <stop offset="50%"  stopColor="rgba(255,255,255,0.38)"/>
+      <stop offset="100%" stopColor="rgba(255,255,255,0.00)"/>
+    </radialGradient>
+
+    <clipPath id={`cp_${uid}`}><circle cx="50" cy="50" r="44"/></clipPath>
+  </defs>
+
+  {/* Near-invisible dome — just the rim counts */}
+  <circle cx="50" cy="50" r="44" fill={`url(#r_${uid})`}/>
+
+  {/* Outer rim stroke — warmer tint for special bubbles */}
+  <circle cx="50" cy="50" r="44" fill="none"
+    stroke={special ? "rgba(200,155,80,0.65)" : B.rimStroke} strokeWidth={special ? "1.8" : "1.3"}/>
+  {/* Inner rim — very faint double-edge */}
+  <circle cx="50" cy="50" r="42" fill="none" stroke="rgba(255,252,244,0.14)" strokeWidth="0.7"/>
+
+  <g clipPath={`url(#cp_${uid})`}>
+    {/* Primary diagonal crease — the defining visual element */}
+    <ellipse cx={cCx} cy={cCy} rx={cRx} ry={cRy}
+      fill={`url(#c_${uid})`}
+      transform={`rotate(${creaseAngle} ${cCx} ${cCy})`}/>
+    {/* Optional second small crease */}
+    {hasCrk2 && (
+      <ellipse cx={c2x} cy={c2y} rx={6 + rnd * 4} ry={2.5 + rnd2 * 1.5}
+        fill="rgba(255,255,255,0.32)"
+        transform={`rotate(${creaseAngle + 15} ${c2x} ${c2y})`}/>
+    )}
+    {/* Faint bottom-rim inner glow — suggests dome curvature */}
+    <path d={`M ${22+rnd*4} ${72+rnd2*5} Q 50 ${82+rnd*6} ${78-rnd*4} ${72+rnd2*5}`}
+      fill="none" stroke="rgba(255,252,244,0.12)" strokeWidth="1.8" strokeLinecap="round"/>
+  </g>
+</svg>
+```
+
+);
+}
+
+// ── POPPED BUBBLE VARIANTS ────────────────────────────────────────────────────
+// From reference: flat disc, wrinkles go edge-to-edge (not from centre),
+// irregular curved lines like crumpled cling wrap.
+function FlatBubble({ size, rnd = 0.5, rnd2 = 0.5 }) {
+const v = Math.floor(rnd * 4);
+if (v === 0) return <FlatV0 size={size} rnd={rnd} rnd2={rnd2}/>;
+if (v === 1) return <FlatV1 size={size} rnd={rnd} rnd2={rnd2}/>;
+if (v === 2) return <FlatV2 size={size} rnd={rnd} rnd2={rnd2}/>;
+return <FlatV3 size={size} rnd={rnd} rnd2={rnd2}/>;
+}
+
+// Shared flat disc base — used by all variants
+function FlatBase({ uid, fill }) {
+return (
+<>
+<circle cx="50" cy="50" r="43" fill={fill}/>
+<circle cx="50" cy="50" r="43" fill="none" stroke={B.flatStroke} strokeWidth="1.0"/>
+</>
+);
+}
+
+// Helper: edge-to-edge wrinkle — starts near one rim, curves across, ends near opposite rim
+function edgeWrinkle(rnd, rnd2, angle, offset, depth) {
+const a = angle * Math.PI / 180;
+const perp = (angle + 90) * Math.PI / 180;
+const r = 42; // near the rim
+const startOffset = offset * 2 - 1; // -1 to +1
+// Start/end points on opposite sides of the circle
+const x0 = 50 + r * Math.cos(a + startOffset * 0.3);
+const y0 = 50 + r * Math.sin(a + startOffset * 0.3);
+const x1 = 50 - r * Math.cos(a - startOffset * 0.2);
+const y1 = 50 - r * Math.sin(a - startOffset * 0.2);
+// Control point: offset perpendicularly for natural bow
+const bow = (depth * 2 - 1) * 16;
+const xm = (x0+x1)/2 + bow * Math.cos(perp);
+const ym = (y0+y1)/2 + bow * Math.sin(perp);
+return { x0, y0, xm, ym, x1, y1 };
+}
+
+// V0 — 4 crossing diagonal wrinkles, like lightly crumpled
+function FlatV0({ size, rnd, rnd2 }) {
+const uid = useRef(`v0${(Math.random()*1e9|0).toString(36)}`).current;
+const wrinkles = [
+edgeWrinkle(rnd, rnd2, 35+rnd*20,  rnd*0.8,       rnd2*0.7+0.15),
+edgeWrinkle(rnd, rnd2, 125+rnd2*18, rnd2*0.7+0.15, rnd*0.6+0.2),
+edgeWrinkle(rnd, rnd2, 70+rnd*15,  rnd2*0.6+0.2,  rnd*0.8+0.1),
+edgeWrinkle(rnd, rnd2, 155+rnd2*20, rnd*0.5+0.25,  rnd2*0.7),
+edgeWrinkle(rnd, rnd2, 10+rnd*12,  rnd2*0.4+0.3,  rnd*0.5+0.25),
+];
+return (
+<svg viewBox=“0 0 100 100” width={size} height={size} style={{display:“block”}}>
+<defs>
+<radialGradient id={`v0f_${uid}`} cx=“50%” cy=“50%” r=“50%”>
+<stop offset="0%"   stopColor="rgba(235,228,215,0.90)"/>
+<stop offset="100%" stopColor="rgba(212,202,185,0.82)"/>
+</radialGradient>
+<clipPath id={`v0c_${uid}`}><circle cx="50" cy="50" r="43"/></clipPath>
+</defs>
+<FlatBase uid={uid} fill={`url(#v0f_${uid})`}/>
+<g clipPath={`url(#v0c_${uid})`}>
+{wrinkles.map((w, i) => (
+<g key={i}>
+<path d={`M${w.x0.toFixed(1)},${w.y0.toFixed(1)} Q${(w.xm+1.0).toFixed(1)},${(w.ym+1.0).toFixed(1)} ${w.x1.toFixed(1)},${w.y1.toFixed(1)}`}
+fill=“none” stroke={B.wrinkleSh} strokeWidth={i<3?“1.0”:“0.7”} strokeLinecap=“round”/>
+<path d={`M${w.x0.toFixed(1)},${w.y0.toFixed(1)} Q${(w.xm-1.0).toFixed(1)},${(w.ym-1.0).toFixed(1)} ${w.x1.toFixed(1)},${w.y1.toFixed(1)}`}
+fill=“none” stroke={B.wrinkleHi} strokeWidth={i<3?“0.85”:“0.6”} strokeLinecap=“round”/>
+</g>
 ))}
-<div style={st.homeWrap}>
-<div style={st.homeLogo} className="bubbleFloat3">🫧</div>
-<div style={st.homeTitle}>BubbleWrap</div>
-<div style={st.homeSub}>Revienta todo</div>
-<div style={st.modeCards}>
-<button style={{…st.modeCard,…st.modeInf}} onClick={() => onSelect(“chill”)}>
-<div style={st.modeEmoji}>🍃</div>
-<div style={st.modeName}>Chill</div>
-<div style={st.modeDesc}>Sin tiempo. Música zen. Revienta a tu ritmo.</div>
-{hsInf > 0 && <div style={st.modeHS}>🏆 {hsInf} pts</div>}
-</button>
-<button style={{…st.modeCard,…st.modeTime}} onClick={() => onSelect(“time”)}>
-<div style={st.modeEmoji}>⚡</div>
-<div style={st.modeName}>Challenge</div>
-<div style={st.modeDesc}>20s por nivel. Revienta todo antes que se acabe.</div>
-{hsTime > 0 && <div style={st.modeHS}>🏆 {hsTime} pts</div>}
-</button>
+</g>
+</svg>
+);
+}
+
+// V1 — 2 dominant creases + several short ones, more chaotic
+function FlatV1({ size, rnd, rnd2 }) {
+const uid = useRef(`v1${(Math.random()*1e9|0).toString(36)}`).current;
+const main = [
+edgeWrinkle(rnd, rnd2, 20+rnd*25,  0.3+rnd*0.4,  0.6+rnd2*0.3),
+edgeWrinkle(rnd, rnd2, 100+rnd2*30, 0.2+rnd2*0.5, 0.4+rnd*0.4),
+];
+const minor = [
+edgeWrinkle(rnd, rnd2, 55+rnd*18,  0.6+rnd2*0.3, 0.25+rnd*0.4),
+edgeWrinkle(rnd, rnd2, 140+rnd*20, 0.4+rnd*0.4,  0.7+rnd2*0.25),
+edgeWrinkle(rnd, rnd2, 170+rnd2*15, 0.55+rnd2*0.3, 0.35+rnd*0.35),
+];
+return (
+<svg viewBox=“0 0 100 100” width={size} height={size} style={{display:“block”}}>
+<defs>
+<radialGradient id={`v1f_${uid}`} cx=“42%” cy=“45%” r=“55%”>
+<stop offset="0%"   stopColor="rgba(228,220,206,0.92)"/>
+<stop offset="100%" stopColor="rgba(208,198,180,0.82)"/>
+</radialGradient>
+<clipPath id={`v1c_${uid}`}><circle cx="50" cy="50" r="43"/></clipPath>
+</defs>
+<FlatBase uid={uid} fill={`url(#v1f_${uid})`}/>
+<g clipPath={`url(#v1c_${uid})`}>
+{main.map((w, i) => (
+<g key={i}>
+<path d={`M${w.x0.toFixed(1)},${w.y0.toFixed(1)} Q${(w.xm+1.2).toFixed(1)},${(w.ym+1.2).toFixed(1)} ${w.x1.toFixed(1)},${w.y1.toFixed(1)}`}
+fill=“none” stroke={B.wrinkleSh} strokeWidth=“1.2” strokeLinecap=“round”/>
+<path d={`M${w.x0.toFixed(1)},${w.y0.toFixed(1)} Q${(w.xm-1.2).toFixed(1)},${(w.ym-1.2).toFixed(1)} ${w.x1.toFixed(1)},${w.y1.toFixed(1)}`}
+fill=“none” stroke={B.wrinkleHi} strokeWidth=“1.0” strokeLinecap=“round”/>
+</g>
+))}
+{minor.map((w, i) => (
+<g key={i}>
+<path d={`M${w.x0.toFixed(1)},${w.y0.toFixed(1)} Q${(w.xm+0.8).toFixed(1)},${(w.ym+0.8).toFixed(1)} ${w.x1.toFixed(1)},${w.y1.toFixed(1)}`}
+fill=“none” stroke={B.wrinkleSh} strokeWidth=“0.7” strokeLinecap=“round”/>
+<path d={`M${w.x0.toFixed(1)},${w.y0.toFixed(1)} Q${(w.xm-0.8).toFixed(1)},${(w.ym-0.8).toFixed(1)} ${w.x1.toFixed(1)},${w.y1.toFixed(1)}`}
+fill=“none” stroke={B.wrinkleHi} strokeWidth=“0.6” strokeLinecap=“round”/>
+</g>
+))}
+</g>
+</svg>
+);
+}
+
+// V2 — mostly horizontal/gentle wrinkles, like gently pressed
+function FlatV2({ size, rnd, rnd2 }) {
+const uid = useRef(`v2${(Math.random()*1e9|0).toString(36)}`).current;
+const wrinkles = [
+edgeWrinkle(rnd, rnd2, 5+rnd*15,   0.3+rnd*0.4,  0.45+rnd2*0.4),
+edgeWrinkle(rnd, rnd2, 175+rnd2*12, 0.5+rnd2*0.35, 0.3+rnd*0.5),
+edgeWrinkle(rnd, rnd2, 15+rnd*10,  0.65+rnd*0.3, 0.6+rnd2*0.3),
+edgeWrinkle(rnd, rnd2, 168+rnd2*14, 0.35+rnd2*0.4, 0.55+rnd*0.35),
+edgeWrinkle(rnd, rnd2, 80+rnd*20,  0.55+rnd*0.3, 0.4+rnd2*0.45),
+];
+return (
+<svg viewBox=“0 0 100 100” width={size} height={size} style={{display:“block”}}>
+<defs>
+<radialGradient id={`v2f_${uid}`} cx=“55%” cy=“52%” r=“52%”>
+<stop offset="0%"   stopColor="rgba(232,224,210,0.90)"/>
+<stop offset="100%" stopColor="rgba(210,200,182,0.80)"/>
+</radialGradient>
+<clipPath id={`v2c_${uid}`}><circle cx="50" cy="50" r="43"/></clipPath>
+</defs>
+<FlatBase uid={uid} fill={`url(#v2f_${uid})`}/>
+<g clipPath={`url(#v2c_${uid})`}>
+{wrinkles.map((w, i) => (
+<g key={i}>
+<path d={`M${w.x0.toFixed(1)},${w.y0.toFixed(1)} Q${(w.xm+0.9).toFixed(1)},${(w.ym+0.9).toFixed(1)} ${w.x1.toFixed(1)},${w.y1.toFixed(1)}`}
+fill=“none” stroke={B.wrinkleSh} strokeWidth={i<2?“1.1”:“0.75”} strokeLinecap=“round”/>
+<path d={`M${w.x0.toFixed(1)},${w.y0.toFixed(1)} Q${(w.xm-0.9).toFixed(1)},${(w.ym-0.9).toFixed(1)} ${w.x1.toFixed(1)},${w.y1.toFixed(1)}`}
+fill=“none” stroke={B.wrinkleHi} strokeWidth={i<2?“0.95”:“0.65”} strokeLinecap=“round”/>
+</g>
+))}
+</g>
+</svg>
+);
+}
+
+// V3 — heavily crumpled, many wrinkles at varied angles
+function FlatV3({ size, rnd, rnd2 }) {
+const uid = useRef(`v3${(Math.random()*1e9|0).toString(36)}`).current;
+const wrinkles = [
+edgeWrinkle(rnd,  rnd2, 28+rnd*18,   0.2+rnd*0.5,   0.7+rnd2*0.25),
+edgeWrinkle(rnd2, rnd,  75+rnd2*22,  0.55+rnd2*0.4, 0.3+rnd*0.5),
+edgeWrinkle(rnd,  rnd2, 118+rnd*20,  0.35+rnd*0.45, 0.6+rnd2*0.3),
+edgeWrinkle(rnd2, rnd,  160+rnd2*18, 0.6+rnd2*0.3,  0.25+rnd*0.55),
+edgeWrinkle(rnd,  rnd2, 45+rnd*15,   0.4+rnd*0.4,   0.5+rnd2*0.4),
+edgeWrinkle(rnd2, rnd,  135+rnd2*14, 0.5+rnd2*0.35, 0.4+rnd*0.45),
+];
+return (
+<svg viewBox=“0 0 100 100” width={size} height={size} style={{display:“block”}}>
+<defs>
+<radialGradient id={`v3f_${uid}`} cx=“48%” cy=“50%” r=“52%”>
+<stop offset="0%"   stopColor="rgba(225,216,202,0.92)"/>
+<stop offset="100%" stopColor="rgba(205,194,176,0.82)"/>
+</radialGradient>
+<clipPath id={`v3c_${uid}`}><circle cx="50" cy="50" r="43"/></clipPath>
+</defs>
+<FlatBase uid={uid} fill={`url(#v3f_${uid})`}/>
+<g clipPath={`url(#v3c_${uid})`}>
+{wrinkles.map((w, i) => (
+<g key={i}>
+<path d={`M${w.x0.toFixed(1)},${w.y0.toFixed(1)} Q${(w.xm+1.1).toFixed(1)},${(w.ym+1.1).toFixed(1)} ${w.x1.toFixed(1)},${w.y1.toFixed(1)}`}
+fill=“none” stroke={B.wrinkleSh} strokeWidth={i<3?“1.0”:“0.68”} strokeLinecap=“round”/>
+<path d={`M${w.x0.toFixed(1)},${w.y0.toFixed(1)} Q${(w.xm-1.1).toFixed(1)},${(w.ym-1.1).toFixed(1)} ${w.x1.toFixed(1)},${w.y1.toFixed(1)}`}
+fill=“none” stroke={B.wrinkleHi} strokeWidth={i<3?“0.88”:“0.58”} strokeLinecap=“round”/>
+</g>
+))}
+</g>
+</svg>
+);
+}
+
+function BurstBubble({ size, special = false }) {
+return (
+<svg viewBox=“0 0 100 100” width={size} height={size}
+style={{ display: “block”, animation: “burstAnim 0.28s ease-out forwards” }}>
+<defs>
+<radialGradient id="br_g" cx="50%" cy="50%" r="50%">
+<stop offset="0%"   stopColor="rgba(255,252,244,0.90)" />
+<stop offset="45%"  stopColor="rgba(230,222,208,0.50)" />
+<stop offset="100%" stopColor="rgba(200,190,172,0)" />
+</radialGradient>
+</defs>
+<circle cx="50" cy="50" r="48" fill="url(#br_g)" />
+{[0, 45, 90, 135, 180, 225, 270, 315].map((ang, i) => {
+const a = ang * Math.PI / 180;
+return <line key={i}
+x1={(50 + 8 * Math.cos(a)).toFixed(1)} y1={(50 + 8 * Math.sin(a)).toFixed(1)}
+x2={(50 + (36 + i * 1.5) * Math.cos(a)).toFixed(1)} y2={(50 + (36 + i * 1.5) * Math.sin(a)).toFixed(1)}
+stroke=“rgba(210,200,182,0.55)” strokeWidth=“1.1” strokeLinecap=“round” />;
+})}
+</svg>
+);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// BUBBLE CELL — pressure-sensitive pop
+// Mechanic: light/quick touch = bubble stretches but doesn’t pop (cancelled on lift)
+//           hold 40ms OR measured pressure ≥ 0.4 = pop
+// ═══════════════════════════════════════════════════════════════════════════════
+function BubbleCell({ bubble, bubbleSize, onPop, sheetRef, skin }) {
+const { popped, rnd, rnd2, pitchSeed, special } = bubble;
+const [state, setState]       = useState(popped ? “broken” : “intact”);
+const [squish, setSquish]     = useState(0); // 0-1 compression depth for visual
+const cellRef    = useRef(null);
+const pressTime  = useRef(null);
+const popTimer   = useRef(null);
+const squishFrame= useRef(null);
+const didPop     = useRef(false);
+
+useEffect(() => { setState(popped ? “broken” : “intact”); }, [popped]);
+useEffect(() => () => {
+if (popTimer.current)    clearTimeout(popTimer.current);
+if (squishFrame.current) cancelAnimationFrame(squishFrame.current);
+}, []);
+
+const getCenter = () => {
+if (!cellRef.current || !sheetRef.current) return { cx: 0, cy: 0 };
+const cr = cellRef.current.getBoundingClientRect();
+const sr = sheetRef.current.getBoundingClientRect();
+return { cx: cr.left - sr.left + cr.width / 2, cy: cr.top - sr.top + cr.height / 2 };
+};
+
+const doPop = (pressDuration) => {
+if (didPop.current) return;
+didPop.current = true;
+if (popTimer.current) clearTimeout(popTimer.current);
+setSquish(0);
+setState(“popping”);
+haptic(special ? “heavy” : “light”);
+const { cx, cy } = getCenter();
+onPop(cx, cy, pitchSeed, special, pressDuration);
+setTimeout(() => setState(“broken”), 260);
+};
+
+const POP_THRESHOLD = 50; // ms — must hold this long to pop
+
+const handleDown = (e) => {
+e.preventDefault();
+if (state !== “intact”) return;
+didPop.current = false;
+pressTime.current = Date.now();
+setState(“pressing”);
+
+```
+// Animate squish: grows from 0→1 over POP_THRESHOLD ms
+const startTime = Date.now();
+const animSquish = () => {
+  const elapsed = Date.now() - startTime;
+  const s = Math.min(elapsed / POP_THRESHOLD, 1);
+  setSquish(s);
+  if (s < 1 && !didPop.current) squishFrame.current = requestAnimationFrame(animSquish);
+};
+squishFrame.current = requestAnimationFrame(animSquish);
+
+// Check pointer pressure if supported
+const pressure = e.pressure || 0;
+if (pressure >= 0.55) {
+  setTimeout(() => doPop(0), 8);
+  return;
+}
+
+// Pop after 50ms hold
+popTimer.current = setTimeout(() => {
+  doPop(Date.now() - pressTime.current);
+}, POP_THRESHOLD);
+```
+
+};
+
+const handleUp = (e) => {
+e.preventDefault();
+if (state !== “pressing”) return;
+const held = Date.now() - (pressTime.current || Date.now());
+
+```
+if (squishFrame.current) cancelAnimationFrame(squishFrame.current);
+setSquish(0);
+
+// Released before threshold — spring back, no pop
+if (!didPop.current && held < POP_THRESHOLD) {
+  if (popTimer.current) clearTimeout(popTimer.current);
+  setState("intact");
+}
+```
+
+};
+
+const handleLeave = () => {
+if (state === “pressing” && !didPop.current) {
+if (popTimer.current) clearTimeout(popTimer.current);
+if (squishFrame.current) cancelAnimationFrame(squishFrame.current);
+setSquish(0);
+setState(“intact”);
+}
+};
+
+const sz = bubbleSize;
+const isPressed = state === “pressing”;
+
+// Squish transform: scaleY decreases, scaleX increases slightly (volume conservation)
+const squishScaleY = 1 - squish * 0.28;
+const squishScaleX = 1 + squish * 0.10;
+
+return (
+<div ref={cellRef}
+style={{
+width: sz, height: sz, flexShrink: 0,
+display: “flex”, alignItems: “center”, justifyContent: “center”,
+cursor: (state === “intact” || isPressed) ? “pointer” : “default”,
+position: “relative”, overflow: “visible”,
+…(special && state === “intact” ? { filter: “drop-shadow(0 0 3px rgba(220,180,100,0.32))” } : {}),
+}}
+onPointerDown={handleDown} onPointerUp={handleUp} onPointerLeave={handleLeave}
+>
+{(state === “intact” || isPressed) && (
+<div style={{
+transform: isPressed ? `scaleY(${squishScaleY}) scaleX(${squishScaleX})` : “scale(1)”,
+transition: isPressed ? “none” : “transform 0.15s cubic-bezier(.34,1.5,.64,1)”,
+transformOrigin: “center bottom”,
+}}>
+<IntactBubble size={sz * 0.98} skinFilter={skin?.hue || null}
+rnd={rnd} rnd2={rnd2} pressed={false} special={special} />
 </div>
-<div style={st.homeActions}>
-<button style={st.homeBtn} onClick={onShop}>🛍️ Tienda</button>
-<button style={st.homeBtn} onClick={onStats}>📊 Stats</button>
-<button style={st.homeBtn} onClick={onAchievements}>🏅 Logros</button>
-<button style={st.homeBtn} onClick={onSettings}>⚙️ Config</button>
-</div>
-</div>
+)}
+{state === “popping” && <BurstBubble size={sz * (special ? 1.15 : 1.05)} special={special} />}
+{state === “broken”  && <FlatBubble  size={sz * 0.98} rnd={rnd} rnd2={rnd2} />}
 </div>
 );
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// SHOP SCREEN
+// CORNER MENU
+// ═══════════════════════════════════════════════════════════════════════════════
+function CornerMenu({ onShop, onSettings }) {
+const [open, setOpen] = useState(false);
+const items = [{ label: “tienda”, fn: onShop }, { label: “ajustes”, fn: onSettings }];
+return (
+<div style={{ position: “fixed”, bottom: 74, right: 18, zIndex: 100 }}>
+<div style={{ display:“flex”, flexDirection:“column”, alignItems:“flex-end”, gap:8, marginBottom: open ? 10 : 0, overflow:“hidden”, maxHeight: open ? 120 : 0, transition:“max-height 0.25s ease, margin-bottom 0.25s ease” }}>
+{items.map(({ label, fn }) => (
+<button key={label} style={st.menuItem} onClick={() => { setOpen(false); fn(); }}>{label}</button>
+))}
+</div>
+<button style={st.menuToggle} onClick={() => setOpen(o => !o)}>
+<span style={{ display:“block”, transition:“transform 0.22s”, transform: open ? “rotate(45deg)” : “rotate(0)”, fontSize:20, lineHeight:1, color: C.inkMid }}>+</span>
+</button>
+</div>
+);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SAND BG — fine beach sand with subtle ripple marks
+// ═══════════════════════════════════════════════════════════════════════════════
+function ZenBg() {
+const ripples = useRef(
+Array.from({ length: 28 }, (_, i) => ({
+y:   4 + i * 5.8 + (Math.random() - 0.5) * 2.2,
+amp: 0.6 + Math.random() * 1.2,
+freq: 0.018 + Math.random() * 0.014,
+phase: Math.random() * Math.PI * 2,
+op: 0.10 + Math.random() * 0.14,
+dark: Math.random() > 0.5,
+}))
+).current;
+
+// Build wavy path for each ripple
+const wavePath = (y, amp, freq, phase) => {
+const pts = Array.from({ length: 22 }, (_, i) => {
+const x = i * (100 / 21);
+const dy = amp * Math.sin(freq * x * Math.PI * 2 + phase);
+return `${x.toFixed(1)},${(y + dy).toFixed(2)}`;
+});
+return `M ${pts.join(" L ")}`;
+};
+
+return (
+<div style={{ position:“fixed”, inset:0, zIndex:0, pointerEvents:“none”, overflow:“hidden” }}>
+{/* Sand base gradient — warm, slightly uneven like natural sand */}
+<div style={{ position:“absolute”, inset:0,
+background:“radial-gradient(ellipse 160% 120% at 42% 38%, #f5ead4 0%, #eedfc4 22%, #e8d8b8 48%, #e0ceaa 72%, #d8c49e 100%)” }} />
+
+```
+  <svg style={{ position:"absolute", inset:0, width:"100%", height:"100%" }}
+    viewBox="0 0 100 170" preserveAspectRatio="xMidYMid slice">
+    <defs>
+      {/* Fine grain */}
+      <filter id="grain2">
+        <feTurbulence type="fractalNoise" baseFrequency="0.78" numOctaves="4" stitchTiles="stitch"/>
+        <feColorMatrix type="saturate" values="0"/>
+      </filter>
+      {/* Coarser sand texture */}
+      <filter id="sandTex">
+        <feTurbulence type="turbulence" baseFrequency="0.22 0.18" numOctaves="3" seed="12"/>
+        <feColorMatrix type="saturate" values="0"/>
+        <feBlend in="SourceGraphic" mode="multiply"/>
+      </filter>
+    </defs>
+
+    {/* Coarse sand texture base */}
+    <rect width="100" height="170" filter="url(#sandTex)" opacity="0.055"/>
+
+    {/* Ripple lines — subtle wind-blown sand patterns */}
+    {ripples.map((r, i) => (
+      <path key={i}
+        d={wavePath(r.y, r.amp, r.freq, r.phase)}
+        fill="none"
+        stroke={r.dark ? `rgba(155,128,88,${r.op})` : `rgba(248,238,218,${r.op * 0.9})`}
+        strokeWidth={r.dark ? "0.55" : "0.42"}
+        strokeLinecap="round"
+      />
+    ))}
+
+    {/* Fine grain overlay */}
+    <rect width="100" height="170" filter="url(#grain2)" opacity="0.048"/>
+  </svg>
+
+  {/* Soft warm vignette */}
+  <div style={{ position:"absolute", inset:0,
+    background:"radial-gradient(ellipse 95% 95% at 50% 50%, transparent 42%, rgba(145,115,72,0.10) 100%)" }} />
+</div>
+```
+
+);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SHOP
 // ═══════════════════════════════════════════════════════════════════════════════
 function ShopScreen({ onBack }) {
-const [coins, setCoins]             = useState(() => load(“coins”, 0));
-const [unlockedSkins, setUnlocked]  = useState(() => load(“unlockedSkins”, [“classic”]));
-const [unlockedSound, setUSound]    = useState(() => load(“unlockedSound”, [“classic”]));
-const [activeSkin, setActiveSkin]   = useState(() => load(“activeSkin”, “classic”));
-const [activeSound, setActiveSound] = useState(() => load(“activeSound”, “classic”));
+const [coins, setCoins]            = useState(() => load(“coins”, 0));
+const [unlockedSkins, setUnlocked] = useState(() => load(“unlockedSkins”, [“classic”]));
+const [unlockedSound, setUSound]   = useState(() => load(“unlockedSound”, [“classic”]));
+const [activeSkin, setActiveSkin]  = useState(() => load(“activeSkin”, “classic”));
+const [activeSound, setActiveSound]= useState(() => load(“activeSound”, “classic”));
 
 const buy = (type, id, price) => {
 if (coins < price) return;
-const nc = coins - price;
-setCoins(nc); store(“coins”, nc);
-if (type === “skin”) {
-const nu = […unlockedSkins, id]; setUnlocked(nu); store(“unlockedSkins”, nu);
-} else {
-const nu = […unlockedSound, id]; setUSound(nu); store(“unlockedSound”, nu);
-}
+const nc = coins - price; setCoins(nc); store(“coins”, nc);
+if (type === “skin”) { const nu = […unlockedSkins, id]; setUnlocked(nu); store(“unlockedSkins”, nu); }
+else { const nu = […unlockedSound, id]; setUSound(nu); store(“unlockedSound”, nu); }
 };
 const activate = (type, id) => {
 if (type === “skin”) { setActiveSkin(id); store(“activeSkin”, id); }
@@ -268,865 +885,229 @@ else { setActiveSound(id); store(“activeSound”, id); }
 };
 
 return (
-<div style={st.root}>
-<style>{css}</style>
-<div style={st.bg} />
-<div style={st.shopWrap}>
-<div style={st.shopHeader}>
-<button style={st.backBtn} onClick={onBack}>← Volver</button>
-<span style={st.shopTitle}>🛍️ Tienda</span>
-<span style={st.coinsDisplay}>🪙 {coins}</span>
+<div style={st.root}><style>{css}</style><ZenBg />
+<div style={st.pageWrap}>
+<div style={st.pageHeader}>
+<button style={st.backBtn} onClick={onBack}>←</button>
+<span style={st.pageTitle}>◎ {coins}</span>
+<span />
 </div>
-<div style={st.shopSection}>Skins de Burbuja</div>
+<div style={st.sectionLabel}>◯</div>
 <div style={st.shopGrid}>
 {Object.entries(SKINS).map(([id, skin]) => {
 const owned = unlockedSkins.includes(id);
 const active = activeSkin === id;
 return (
-<div key={id} style={{…st.shopCard, …(active ? st.shopCardActive : {})}}>
-<div style={{ fontSize:32 }}>{skin.emoji}</div>
-<div style={st.shopItemName}>{skin.name}</div>
-<div style={{ width:44, height:44, borderRadius:“50%”, background: skin.gradient, margin:“4px auto”,
-boxShadow:`0 3px 10px ${skin.glow}` }} />
-{active ? <div style={st.shopActive}>✓ Activa</div>
-: owned ? <button style={st.shopBtnSec} onClick={() => activate(“skin”, id)}>Usar</button>
-: <button style={{...st.shopBtnBuy, opacity: coins >= skin.price ? 1 : 0.5}}
-onClick={() => buy(“skin”, id, skin.price)}>🪙 {skin.price}</button>}
+<div key={id} style={{ …st.shopCard, …(active ? st.shopCardOn : {}) }}>
+<div style={{ width: 44, height: 44, margin: “0 auto 4px”, filter: skin.hue || undefined }}>
+<IntactBubble size={44} skinFilter={null} rnd={0.4} rnd2={0.5} pressed={false} />
+</div>
+{active ? <div style={st.shopBadge}>✓</div>
+: owned ? <button style={st.shopBtnSec} onClick={() => activate(“skin”, id)}>↩</button>
+: <button style={{ …st.shopBtnBuy, opacity: coins >= skin.price ? 1 : 0.45 }}
+onClick={() => buy(“skin”, id, skin.price)}>◎ {skin.price}</button>}
 </div>
 );
 })}
 </div>
-<div style={st.shopSection}>Skins de Sonido</div>
+<div style={st.sectionLabel}>♪</div>
 <div style={st.shopGrid}>
 {Object.entries(SOUND_SKINS).map(([id, sk]) => {
 const owned = unlockedSound.includes(id);
 const active = activeSound === id;
 return (
-<div key={id} style={{…st.shopCard, …(active ? st.shopCardActive : {})}}>
-<div style={{ fontSize:32 }}>{sk.emoji}</div>
-<div style={st.shopItemName}>{sk.name}</div>
-{active ? <div style={st.shopActive}>✓ Activo</div>
-: owned ? <button style={st.shopBtnSec} onClick={() => activate(“sound”, id)}>Usar</button>
-: <button style={{...st.shopBtnBuy, opacity: coins >= sk.price ? 1 : 0.5}}
-onClick={() => buy(“sound”, id, sk.price)}>🪙 {sk.price}</button>}
+<div key={id} style={{ …st.shopCard, …(active ? st.shopCardOn : {}) }}>
+<div style={{ fontSize: 22, margin: “6px 0 8px”, color: C.inkLight }}>
+{id === “classic” ? “◌” : id === “metal” ? “◈” : “◉”}
+</div>
+{active ? <div style={st.shopBadge}>✓</div>
+: owned ? <button style={st.shopBtnSec} onClick={() => activate(“sound”, id)}>↩</button>
+: <button style={{ …st.shopBtnBuy, opacity: coins >= sk.price ? 1 : 0.45 }}
+onClick={() => buy(“sound”, id, sk.price)}>◎ {sk.price}</button>}
 </div>
 );
 })}
 </div>
-<div style={st.shopNote}>Ganas 🪙 reventando burbujas</div>
 </div>
 </div>
 );
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// SETTINGS SCREEN
+// SETTINGS
 // ═══════════════════════════════════════════════════════════════════════════════
 function SettingsScreen({ onBack }) {
 const [musicOn, setMusicOn] = useState(() => load(“cfg_music”, true));
 const [soundOn, setSoundOn] = useState(() => load(“cfg_sound”, true));
-
-const toggle = (key, val, setter) => {
-setter(val); store(key, val);
-};
-
-const Row = ({ label, emoji, value, onToggle }) => (
+const toggle = (key, val, setter) => { setter(val); store(key, val); };
+const Row = ({ label, value, onToggle }) => (
 <div style={st.settingRow}>
-<span style={{ fontSize:24 }}>{emoji}</span>
 <span style={st.settingLabel}>{label}</span>
-<div style={{ …st.toggle, background: value ? “#4a6fe8” : “#d0d8e8” }} onClick={() => onToggle(!value)}>
+<div style={{ …st.toggle, background: value ? C.accent : “#cec6ba” }} onClick={() => onToggle(!value)}>
 <div style={{ …st.toggleKnob, transform: value ? “translateX(22px)” : “translateX(2px)” }} />
 </div>
 </div>
 );
-
 return (
-<div style={st.root}>
-<style>{css}</style>
-<div style={st.bg} />
-<div style={st.shopWrap}>
-<div style={st.shopHeader}>
-<button style={st.backBtn} onClick={onBack}>← Volver</button>
-<span style={st.shopTitle}>⚙️ Configuración</span>
-<span />
+<div style={st.root}><style>{css}</style><ZenBg />
+<div style={st.pageWrap}>
+<div style={st.pageHeader}>
+<button style={st.backBtn} onClick={onBack}>←</button>
+<span style={st.pageTitle}>⚙</span><span />
 </div>
-<Row label=“Música” emoji=“🎵” value={musicOn} onToggle={v => toggle(“cfg_music”, v, setMusicOn)} />
-<Row label=“Sonido de burbujas” emoji=“🔊” value={soundOn} onToggle={v => toggle(“cfg_sound”, v, setSoundOn)} />
-<div style={{ fontSize:12, color:”#9aaace”, textAlign:“center”, marginTop:8 }}>
-Los cambios aplican en la próxima partida
-</div>
-</div>
-</div>
-);
-}
-function StatsScreen({ onBack }) {
-const stats = load(“stats”, { totalPopped:0, maxCombo:0, sheetsCompleted:0, streakActivated:0, gamesPlayed:0 });
-const hsInf  = load(“hs_infinite”, 0);
-const hsTime = load(“hs_time”, 0);
-const rows = [
-[“🫧”, “Burbujas totales”,    stats.totalPopped],
-[“🔥”, “Combo máximo”,         stats.maxCombo],
-[“📄”, “Hojas completadas”,    stats.sheetsCompleted],
-[“⚡”, “Rachas activadas”,     stats.streakActivated],
-[“🎮”, “Partidas jugadas”,     stats.gamesPlayed],
-[“♾️”, “Récord Infinito”,      hsInf + “ pts”],
-[“⏱️”, “Récord Contrarreloj”,  hsTime + “ pts”],
-];
-return (
-<div style={st.root}>
-<style>{css}</style>
-<div style={st.bg} />
-<div style={st.shopWrap}>
-<div style={st.shopHeader}>
-<button style={st.backBtn} onClick={onBack}>← Volver</button>
-<span style={st.shopTitle}>📊 Estadísticas</span>
-<span />
-</div>
-{rows.map(([emoji, label, val]) => (
-<div key={label} style={st.statRow}>
-<span style={st.statEmoji}>{emoji}</span>
-<span style={st.statLabel}>{label}</span>
-<span style={st.statVal}>{val}</span>
-</div>
-))}
+<Row label=“♪” value={musicOn} onToggle={v => toggle(“cfg_music”, v, setMusicOn)} />
+<Row label=“◎” value={soundOn} onToggle={v => toggle(“cfg_sound”, v, setSoundOn)} />
 </div>
 </div>
 );
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// ACHIEVEMENTS SCREEN
+// CHILL MODE
 // ═══════════════════════════════════════════════════════════════════════════════
-function AchievementsScreen({ onBack }) {
-const stats       = load(“stats”, {});
-const unlockedAch = load(“achievements”, []);
-return (
-<div style={st.root}>
-<style>{css}</style>
-<div style={st.bg} />
-<div style={st.shopWrap}>
-<div style={st.shopHeader}>
-<button style={st.backBtn} onClick={onBack}>← Volver</button>
-<span style={st.shopTitle}>🏅 Logros</span>
-<span style={st.coinsDisplay}>{unlockedAch.length}/{ACHIEVEMENTS.length}</span>
-</div>
-{ACHIEVEMENTS.map(a => {
-const done = unlockedAch.includes(a.id);
-return (
-<div key={a.id} style={{…st.achRow, opacity: done ? 1 : 0.4}}>
-<span style={{ fontSize:28 }}>{done ? a.emoji : “🔒”}</span>
-<div>
-<div style={st.achRowName}>{a.name}</div>
-<div style={st.achRowDesc}>{a.desc}</div>
-</div>
-{done && <span style={st.achDone}>✓</span>}
-</div>
-);
-})}
-</div>
-</div>
-);
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// SHARED GAME LOGIC HOOK
-// ═══════════════════════════════════════════════════════════════════════════════
-function useGameLogic(soundSkin) {
-const playSound = useSound(soundSkin);
-const [toastAch, setToastAch] = useState(null);
-
-const updateStats = useCallback((patch) => {
-const prev = load(“stats”, { totalPopped:0, maxCombo:0, sheetsCompleted:0, streakActivated:0, gamesPlayed:0 });
-const next = { …prev };
-for (const [k,v] of Object.entries(patch)) {
-if (k === “maxCombo”) next[k] = Math.max(next[k]||0, v);
-else next[k] = (next[k]||0) + v;
-}
-store(“stats”, next);
-// Check achievements
-const unlocked = load(“achievements”, []);
-const newUnlocked = […unlocked];
-const unlockedSkins = load(“unlockedSkins”, [“classic”]);
-for (const a of ACHIEVEMENTS) {
-if (!newUnlocked.includes(a.id) && a.check({ …next, unlockedSkins })) {
-newUnlocked.push(a.id);
-setToastAch(a);
-haptic(“heavy”);
-}
-}
-if (newUnlocked.length !== unlocked.length) store(“achievements”, newUnlocked);
-// Coins: 1 per 10 popped
-if (patch.totalPopped) {
-const coins = load(“coins”, 0);
-store(“coins”, coins + Math.floor(patch.totalPopped / 10));
-}
-}, []);
-
-return { playSound, updateStats, toastAch, setToastAch };
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// CONFETTI LAYER
-// ═══════════════════════════════════════════════════════════════════════════════
-function ConfettiLayer({ confetti }) {
-return confetti.map(c => (
-<div key={c.id} className=“confettiPiece” style={{
-position:“fixed”, top:”-20px”, left:`${c.x}%`, zIndex:100,
-width: c.shape===“rect” ? c.size : c.size,
-height: c.shape===“rect” ? c.size*0.4 : c.size,
-borderRadius: c.shape===“circle” ? “50%” : “2px”,
-background: c.color,
-animationDelay:`${c.delay}s`, animationDuration:`${c.duration}s`,
-“–drift”:`${c.drift}px`, “–rot”:`${c.rot}deg`,
-pointerEvents:“none”,
-}} />
-));
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// ZEN MUSIC (Web Audio generative)
-// ═══════════════════════════════════════════════════════════════════════════════
-function useZenMusic() {
-const actx = useRef(null);
-const nodes = useRef([]);
-const started = useRef(false);
-const ivRef = useRef(null);
-const nextTimeRef = useRef(0);
-
-const start = useCallback(() => {
-if (started.current) return;
-try {
-if (!actx.current) actx.current = new (window.AudioContext || window.webkitAudioContext)();
-const ac = actx.current;
-started.current = true;
-
-```
-  const notes = [261.63, 293.66, 329.63, 392.00, 440.00, 523.25, 587.33];
-
-  const playNote = (freq, time, dur, vol = 0.14) => {
-    const osc = ac.createOscillator(); const g = ac.createGain();
-    const delay = ac.createDelay(2); delay.delayTime.value = 0.35;
-    const dg = ac.createGain(); dg.gain.value = 0.3;
-    osc.connect(g); g.connect(ac.destination);
-    g.connect(delay); delay.connect(dg); dg.connect(ac.destination);
-    osc.type = "sine"; osc.frequency.value = freq;
-    g.gain.setValueAtTime(0, time);
-    g.gain.linearRampToValueAtTime(vol, time + 0.08);
-    g.gain.exponentialRampToValueAtTime(0.001, time + dur);
-    osc.start(time); osc.stop(time + dur + 0.1);
-    nodes.current.push(osc);
-  };
-
-  const scheduleLoop = (startTime) => {
-    const pattern = [0, 2, 4, 1, 3, 4, 2, 0];
-    let t = startTime;
-    pattern.forEach((ni, i) => {
-      const note = notes[ni % notes.length];
-      playNote(note, t, 2.2, 0.13);
-      if (i % 3 === 0) playNote(note * 1.5, t + 0.1, 2.0, 0.06);
-      t += 1.8;
-    });
-    // Drone
-    const drone = ac.createOscillator(); const dg = ac.createGain();
-    drone.connect(dg); dg.connect(ac.destination);
-    drone.type = "sine"; drone.frequency.value = 65;
-    dg.gain.setValueAtTime(0.08, startTime);
-    dg.gain.linearRampToValueAtTime(0.1, startTime + 4);
-    dg.gain.linearRampToValueAtTime(0.08, t);
-    drone.start(startTime); drone.stop(t + 0.5);
-    nodes.current.push(drone);
-    return t;
-  };
-
-  nextTimeRef.current = ac.currentTime + 0.05;
-  nextTimeRef.current = scheduleLoop(nextTimeRef.current);
-
-  ivRef.current = setInterval(() => {
-    if (!actx.current || !started.current) return;
-    while (nextTimeRef.current < ac.currentTime + 2.0) {
-      nextTimeRef.current = scheduleLoop(nextTimeRef.current);
-    }
-  }, 500);
-} catch {}
-```
-
-}, []);
-
-const stop = useCallback(() => {
-try {
-clearInterval(ivRef.current);
-nodes.current.forEach(n => { try { n.stop(); } catch {} });
-nodes.current = [];
-started.current = false;
-if (actx.current) { actx.current.close(); actx.current = null; }
-} catch {}
-}, []);
-
-return { start, stop };
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// URGENT MUSIC — faster, tense, for time attack
-// ═══════════════════════════════════════════════════════════════════════════════
-function useUrgentMusic() {
-const actx = useRef(null);
-const nodes = useRef([]);
-const started = useRef(false);
-const ivRef = useRef(null);
-const nextTimeRef = useRef(0);
-
-const start = useCallback(() => {
-if (started.current) return;
-try {
-if (!actx.current) actx.current = new (window.AudioContext || window.webkitAudioContext)();
-const ac = actx.current;
-started.current = true;
-
-```
-  const notes = [220, 261.63, 311.13, 349.23, 392, 440, 523.25];
-
-  const playNote = (freq, time, dur, vol = 0.18, type = "triangle") => {
-    const osc = ac.createOscillator();
-    const g = ac.createGain();
-    osc.connect(g); g.connect(ac.destination);
-    osc.type = type; osc.frequency.value = freq;
-    g.gain.setValueAtTime(0, time);
-    g.gain.linearRampToValueAtTime(vol, time + 0.03);
-    g.gain.exponentialRampToValueAtTime(0.001, time + dur);
-    osc.start(time); osc.stop(time + dur + 0.05);
-    nodes.current.push(osc);
-  };
-
-  const playBass = (time, dur) => {
-    const osc = ac.createOscillator(); const g = ac.createGain();
-    osc.connect(g); g.connect(ac.destination);
-    osc.type = "sine"; osc.frequency.value = 82;
-    g.gain.setValueAtTime(0.22, time);
-    g.gain.exponentialRampToValueAtTime(0.001, time + dur);
-    osc.start(time); osc.stop(time + dur + 0.02);
-    nodes.current.push(osc);
-  };
-
-  // Returns duration of one loop pass
-  const scheduleLoop = (startTime) => {
-    const pattern = [0, 2, 1, 3, 2, 4, 3, 5, 4, 2, 1, 3];
-    let t = startTime;
-    pattern.forEach((ni, i) => {
-      const freq = notes[ni % notes.length];
-      playNote(freq, t, 0.35, 0.16);
-      if (i % 4 === 0) playNote(freq * 2, t + 0.18, 0.18, 0.08);
-      if (i % 2 === 0) playBass(t, 0.22);
-      t += 0.38;
-    });
-    return t;
-  };
-
-  nextTimeRef.current = ac.currentTime + 0.05;
-  // Schedule first loop immediately
-  nextTimeRef.current = scheduleLoop(nextTimeRef.current);
-
-  // Use short interval (200ms) to keep scheduling ahead continuously
-  ivRef.current = setInterval(() => {
-    if (!actx.current || !started.current) return;
-    const lookahead = 1.0; // schedule 1s ahead
-    while (nextTimeRef.current < ac.currentTime + lookahead) {
-      nextTimeRef.current = scheduleLoop(nextTimeRef.current);
-    }
-  }, 200);
-} catch {}
-```
-
-}, []);
-
-const stop = useCallback(() => {
-try {
-clearInterval(ivRef.current);
-nodes.current.forEach(n => { try { n.stop(); } catch {} });
-nodes.current = [];
-started.current = false;
-if (actx.current) { actx.current.close(); actx.current = null; }
-} catch {}
-}, []);
-
-return { start, stop };
-}
-function ChillMode({ onHome, skin, soundSkin }) {
+function ChillMode({ onMenu, skin, soundSkin }) {
 const VISIBLE_ROWS = 12, BATCH = 6;
-const [rows, setRows]         = useState(() => makeRows(VISIBLE_ROWS + BATCH));
-const [score, setScore]       = useState(0);
-const [hs, setHs]             = useState(() => load(“hs_chill”, 0));
-const [splashes, setSplashes] = useState([]);
-const [combo, setCombo]       = useState(0);
-const [musicOn, setMusicOn]   = useState(true);
+const [rows, setRows]           = useState(() => makeRows(VISIBLE_ROWS + BATCH));
+const [score, setScore]         = useState(0);
+const [hs, setHs]               = useState(() => load(“hs_chill”, 0));
+const [splashes, setSplashes]   = useState([]);
+const [combo, setCombo]         = useState(0);
+const [audioMode, setAudioMode] = useState(“both”);
 const scrollRef = useRef(null), sheetRef = useRef(null);
-const comboRef = useRef(0), comboTimer = useRef(null);
-const scoreRef = useRef(0);
-const { playSound, updateStats, toastAch, setToastAch } = useGameLogic(soundSkin);
-const { start: startMusic, stop: stopMusic } = useZenMusic();
+const comboRef = useRef(0), comboTimer = useRef(null), scoreRef = useRef(0);
+const { playSound, updateStats } = useGameLogic();
+const { start: startMusic, stop: stopMusic, destroy: destroyMusic } = useZenMusic();
+const { onScroll: onScrollSound } = useScrollSound();
 const displayScore = useAnimatedScore(score);
 const currentSkin = SKINS[skin] || SKINS.classic;
 
 useEffect(() => { scoreRef.current = score; }, [score]);
-// Start music immediately on mount
-useEffect(() => { startMusic(); return () => stopMusic(); }, []);
 
-const toggleMusic = () => {
-if (musicOn) { stopMusic(); setMusicOn(false); }
-else { startMusic(); setMusicOn(true); }
+// Music starts on first user interaction (first bubble pop) due to browser autoplay policy.
+// AudioContext requires a user gesture — we trigger it the moment the first pop fires.
+const musicStarted = useRef(false);
+const ensureMusic = useCallback(() => {
+if (musicStarted.current || audioModeRef.current === “off” || audioModeRef.current === “bubbles”) return;
+musicStarted.current = true;
+startMusic();
+}, [startMusic]);
+
+useEffect(() => () => destroyMusic(), []);
+
+const cycleAudio = () => setAudioMode(prev => {
+if (prev === “both”)    { stopMusic(); musicStarted.current = false; return “bubbles”; }
+if (prev === “bubbles”) { return “off”; }
+// off → both: start immediately since we already have a user gesture context
+startMusic(); musicStarted.current = true; return “both”;
+});
+const AUDIO_ICON = { both: “♪”, bubbles: “♩”, off: “–” };
+const audioModeRef = useRef(audioMode);
+useEffect(() => { audioModeRef.current = audioMode; }, [audioMode]);
+
+const reset = () => {
+setRows(makeRows(VISIBLE_ROWS + BATCH));
+setScore(0); scoreRef.current = 0;
+setCombo(0); comboRef.current = 0; setSplashes([]);
+if (scrollRef.current) scrollRef.current.scrollTop = 0;
 };
 
 const handleScroll = useCallback(() => {
 const el = scrollRef.current;
 if (!el) return;
+onScrollSound();
 if (el.scrollHeight - el.scrollTop - el.clientHeight < 200)
 setRows(prev => […prev, …makeRows(BATCH)]);
-}, []);
+}, [onScrollSound]);
 
-const popBubble = useCallback((rowIdx, colIdx, cx, cy) => {
+const popBubble = useCallback((ri, ci, cx, cy, pitchSeed = 1.0, special = false, pressDuration = 80) => {
 setRows(prev => {
-if (prev[rowIdx]?.[colIdx]?.popped) return prev;
+if (prev[ri]?.[ci]?.popped) return prev;
 const next = prev.map(r => […r]);
-next[rowIdx][colIdx] = { …next[rowIdx][colIdx], popped: true };
+next[ri][ci] = { …next[ri][ci], popped: true };
 return next;
 });
-const ns = scoreRef.current + 1;
-setScore(ns);
+const ns = scoreRef.current + 1; setScore(ns);
 if (ns > load(“hs_chill”, 0)) { store(“hs_chill”, ns); setHs(ns); }
 comboRef.current += 1;
-const c = comboRef.current;
-setCombo(c);
+const c = comboRef.current; setCombo(c);
 if (comboTimer.current) clearTimeout(comboTimer.current);
-comboTimer.current = setTimeout(() => { comboRef.current = 0; setCombo(0); }, 600);
-haptic(“light”);
-playSound(c);
+comboTimer.current = setTimeout(() => { comboRef.current = 0; setCombo(0); }, 700);
+// Sound fires at pop moment (haptic already fired in BubbleCell)
+if (audioModeRef.current !== “off”) playSound(pitchSeed, special, pressDuration);
+ensureMusic();
 updateStats({ totalPopped: 1, maxCombo: c });
-const sp = makeSplash(cx, cy);
+const sp = makeSplash(cx, cy, special);
 setSplashes(s => […s, …sp]);
-setTimeout(() => setSplashes(s => s.filter(x => !sp.find(n => n.id === x.id))), 500);
-}, [playSound, updateStats]);
+setTimeout(() => setSplashes(s => s.filter(x => !sp.find(n => n.id === x.id))), 480);
+}, [playSound, updateStats, ensureMusic]);
 
-const BS = Math.min(Math.floor(340 / (COLS + 0.5)), 52);
-const ODD = BS * 0.5, RH = BS * 1.05;
+const BS  = Math.min(Math.floor(340 / (COLS + 0.5)), 52);
+const GAP = Math.max(2, Math.floor(BS * 0.04));
+const ODD = (BS + GAP) * 0.5;
+const RH  = BS + GAP;
 
 return (
 <div style={st.root}>
 <style>{css}</style>
-{/* Zen calm gradient background */}
-<div style={{ …st.bg, background: “linear-gradient(160deg, #e8f5e9 0%, #e3f2fd 35%, #f3e5f5 65%, #e0f7fa 100%)” }} />
-{/* Soft floating orbs for atmosphere */}
-<div style={{ position:“fixed”, top:“10%”, left:“5%”, width:120, height:120, borderRadius:“50%”, background:“radial-gradient(circle, rgba(200,230,200,0.25), transparent 70%)”, pointerEvents:“none”, zIndex:0 }} />
-<div style={{ position:“fixed”, bottom:“15%”, right:“8%”, width:160, height:160, borderRadius:“50%”, background:“radial-gradient(circle, rgba(180,210,240,0.2), transparent 70%)”, pointerEvents:“none”, zIndex:0 }} />
-<div style={{ position:“fixed”, top:“40%”, right:“3%”, width:80, height:80, borderRadius:“50%”, background:“radial-gradient(circle, rgba(220,200,240,0.2), transparent 70%)”, pointerEvents:“none”, zIndex:0 }} />
-
-```
-  {toastAch && <AchievementToast achievement={toastAch} onDone={() => setToastAch(null)} />}
-  <div style={st.wrap}>
-    <div style={st.header}>
-      <button style={st.backBtn} onClick={onHome}>← Inicio</button>
-      <span style={{ ...st.modeTag, color:"#5a8a6a" }}>🍃 Chill</span>
-      <div style={{ display:"flex", alignItems:"center", gap:8 }}>
-        <button onClick={toggleMusic} style={{ background:"none", border:"none", fontSize:18, cursor:"pointer", opacity: musicOn ? 1 : 0.45 }} title={musicOn ? "Apagar música" : "Encender música"}>
-          {musicOn ? "🔊" : "🔇"}
-        </button>
-        <div style={st.headerScore}><span style={{ ...st.headerScoreNum, color:"#5a8a6a" }}>{displayScore}</span><span style={st.headerScoreSub}>pts</span></div>
-      </div>
-    </div>
-    {hs > 0 && <div style={{ ...st.bestRow, color:"#7aaa8a" }}>🏆 récord: {hs}</div>}
-    <div style={{ position:"relative", width:"100%", flex:1, display:"flex", flexDirection:"column" }}>
-      {combo >= 3 && <div style={{ ...st.comboOverlay, background:"rgba(230,245,235,0.9)", color:"#3a8a5a" }}>🌿 ×{combo}</div>}
-      <div ref={scrollRef} style={{ ...st.scrollSheet, border:"1px solid rgba(150,200,170,0.4)", background:"rgba(200,225,210,0.32)", height:"calc(100vh - 120px)" }} onScroll={handleScroll}>
-        <div ref={sheetRef} style={{ position:"relative" }}>
-          {splashes.map(sp => (
-            <div key={sp.id} className="splash" style={{ position:"absolute", zIndex:10, pointerEvents:"none", left:sp.cx, top:sp.cy, width:sp.size, height:sp.size, borderRadius:"50%", background:"rgba(180,220,200,0.75)", "--vx":`${sp.vx}px`, "--vy":`${sp.vy}px`, transform:"translate(-50%,-50%)" }} />
-          ))}
-          <div style={{ padding:"8px 6px 12px" }}>
-            {rows.map((row, ri) => (
-              <div key={ri} style={{ display:"flex", justifyContent:"center", marginLeft: ri%2===1 ? ODD : 0, marginTop: ri===0 ? 0 : BS*0.08, height:RH, alignItems:"center" }}>
-                {row.map((b, ci) => (
-                  <BubbleCell key={b.uid} bubble={b} bubbleSize={BS} sheetRef={sheetRef} skin={currentSkin}
-                    onPop={(cx,cy) => popBubble(ri, ci, cx, cy)} refilling={false} />
-                ))}
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-</div>
-```
-
-);
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// TIME ATTACK MODE
-// ═══════════════════════════════════════════════════════════════════════════════
-function TimeAttackMode({ onHome, skin, soundSkin }) {
-const [lv, setLv]               = useState(LEVELS[0]);
-const [rows, setRows]           = useState(() => makeRows(LEVELS[0].rows));
-const [poppedCount, setPoppedCount] = useState(0);
-const [score, setScore]         = useState(0);
-const [timeLeft, setTimeLeft]   = useState(BASE_TIME);
-const [gameState, setGameState] = useState(“playing”); // start immediately
-const [hs, setHsState]          = useState(() => load(“hs_time”, 0));
-const [combo, setCombo]         = useState(0);
-const [streak, setStreak]       = useState(false);
-const [confetti, setConfetti]   = useState([]);
-const [finalScore, setFinalScore] = useState(0);
-const [splashes, setSplashes]   = useState([]);
-const [levelUpMsg, setLevelUpMsg] = useState(false);
-
-const comboRef = useRef(0), comboTimer = useRef(null);
-const gsRef = useRef(“playing”), scoreRef = useRef(0), lvRef = useRef(LEVELS[0]);
-const streakRef = useRef(0), poppedRef = useRef(0);
-const scrollRef = useRef(null), sheetRef = useRef(null);
-const { playSound, updateStats, toastAch, setToastAch } = useGameLogic(soundSkin);
-const { start: startUrgent, stop: stopUrgent } = useUrgentMusic();
-const displayScore = useAnimatedScore(score);
-const currentSkin = SKINS[skin] || SKINS.classic;
-
-useEffect(() => { gsRef.current = gameState; }, [gameState]);
-useEffect(() => { scoreRef.current = score; }, [score]);
-useEffect(() => { lvRef.current = lv; }, [lv]);
-useEffect(() => { poppedRef.current = poppedCount; }, [poppedCount]);
-// Start urgent music immediately
-useEffect(() => { startUrgent(); return () => stopUrgent(); }, []);
-
-// Timer — resets each level
-useEffect(() => {
-if (gameState !== “playing”) return;
-const iv = setInterval(() => {
-setTimeLeft(t => {
-if (t <= 1) {
-clearInterval(iv);
-const s = scoreRef.current;
-setFinalScore(s);
-if (s > load(“hs_time”,0)) { store(“hs_time”,s); setHsState(s); }
-updateStats({ gamesPlayed:1 });
-stopUrgent();
-setGameState(“lost”);
-return 0;
-}
-return t - 1;
-});
-}, 1000);
-return () => clearInterval(iv);
-}, [gameState, lv]); // re-fires when lv changes → timer resets
-
-// All popped → next level
-useEffect(() => {
-if (gameState !== “playing”) return;
-const total = lvRef.current.rows * COLS;
-if (poppedCount < total) return;
-updateStats({ sheetsCompleted: 1 });
-const currentLv = lvRef.current;
-const isLast = currentLv.level >= LEVELS[LEVELS.length-1].level;
-if (isLast) {
-const s = scoreRef.current;
-setFinalScore(s);
-if (s > load(“hs_time”,0)) { store(“hs_time”,s); setHsState(s); }
-setConfetti(makeConfetti());
-updateStats({ gamesPlayed:1 });
-stopUrgent();
-setGameState(“won”);
-} else {
-const newLv = LEVELS[currentLv.level]; // next level (0-indexed by level-1)
-setLevelUpMsg(true);
-setTimeout(() => setLevelUpMsg(false), 1200);
-// Reset timer with +1s bonus for this level
-setTimeLeft(BASE_TIME + newLv.level - 1);
-setLv(newLv); lvRef.current = newLv;
-setRows(makeRows(newLv.rows));
-setPoppedCount(0); poppedRef.current = 0;
-// Scroll back to top
-if (scrollRef.current) scrollRef.current.scrollTop = 0;
-haptic(“medium”);
-}
-}, [poppedCount, gameState]);
-
-const handleScroll = useCallback(() => {
-const el = scrollRef.current;
-if (!el) return;
-if (el.scrollHeight - el.scrollTop - el.clientHeight < 200)
-setRows(prev => […prev, …makeRows(4)]);
-}, []);
-
-const startGame = () => {
-const l = LEVELS[0]; setLv(l); lvRef.current = l;
-setRows(makeRows(l.rows));
-setPoppedCount(0); poppedRef.current = 0;
-setScore(0); scoreRef.current = 0;
-setFinalScore(0); setTimeLeft(BASE_TIME);
-setCombo(0); comboRef.current = 0; streakRef.current = 0;
-setConfetti([]); setSplashes([]);
-setLevelUpMsg(false); setStreak(false);
-stopUrgent();
-setTimeout(() => { startUrgent(); }, 50);
-setGameState(“playing”);
-};
-
-const popBubble = useCallback((rowIdx, colIdx, cx, cy) => {
-if (gsRef.current !== “playing”) return;
-setRows(prev => {
-if (prev[rowIdx]?.[colIdx]?.popped) return prev;
-const next = prev.map(r => […r]);
-next[rowIdx][colIdx] = { …next[rowIdx][colIdx], popped: true };
-return next;
-});
-setPoppedCount(c => c+1);
-setScore(s => s+1);
-comboRef.current += 1;
-const c = comboRef.current;
-setCombo(c);
-if (comboTimer.current) clearTimeout(comboTimer.current);
-comboTimer.current = setTimeout(() => { comboRef.current=0; setCombo(0); streakRef.current=0; setStreak(false); }, 600);
-streakRef.current += 1;
-if (streakRef.current >= STREAK_THRESHOLD && !streak) { setStreak(true); haptic(“medium”); }
-haptic(“light”);
-playSound(c);
-updateStats({ totalPopped:1, maxCombo:c });
-const sp = makeSplash(cx, cy);
-setSplashes(s => […s, …sp]);
-setTimeout(() => setSplashes(s => s.filter(x => !sp.find(n => n.id===x.id))), 500);
-}, [playSound, updateStats, streak]);
-
-const timerColor = timeLeft<=5 ? “#e84040” : timeLeft<=10 ? “#e88020” : “#4a80e8”;
-const levelTime = BASE_TIME + lv.level - 1;
-const pct = timeLeft / levelTime;
-const BS = Math.min(Math.floor(340/(COLS+0.5)),52);
-const ODD = BS*0.5, RH = BS*1.05;
-
-return (
-<div style={st.root}>
-<style>{css}</style>
-<div style={{ …st.bg, background: streak ? “linear-gradient(150deg,#ffe8f0 0%,#fff0e8 50%,#ffe8ff 100%)” : “linear-gradient(150deg,#dff0ff 0%,#f0e4ff 55%,#e4fff0 100%)”, transition:“background 1s” }} />
-<ConfettiLayer confetti={confetti} />
-{toastAch && <AchievementToast achievement={toastAch} onDone={() => setToastAch(null)} />}
+<ZenBg />
 <div style={st.wrap}>
-<div style={st.header}>
-<button style={st.backBtn} onClick={onHome}>← Inicio</button>
-<span style={st.modeTag}>⚡ Challenge {streak?“🔥”:””}</span>
-<div style={st.headerScore}><span style={st.headerScoreNum}>{displayScore}</span><span style={st.headerScoreSub}>pts</span></div>
-</div>
-{hs > 0 && <div style={st.bestRow}>🏆 récord: {hs}</div>}
 
 ```
-    <div style={st.hud}>
-      <div style={st.hudBlock}>
-        <span style={{ ...st.hudBig, color: combo>=3 ? "#e040a0" : "#4a6fe8" }}>{combo>=2 ? `×${combo}` : `Nv.${lv.level}`}</span>
-        <span style={st.hudSub}>{combo>=2 ? "combo" : "nivel"}</span>
+    {/* ── Top bar ── */}
+    <div style={st.header}>
+      <div style={{ display:"flex", alignItems:"baseline", gap:7 }}>
+        <span style={st.headerScoreNum}>{displayScore}</span>
+        {hs > 0 && <span style={st.headerScoreHs}>/ {hs}</span>}
+        {combo >= 3 && <span style={st.comboTag}>×{combo}</span>}
       </div>
-      <div style={st.timerWrap}>
-        <svg viewBox="0 0 56 56" style={st.timerSvg}>
-          <circle cx="28" cy="28" r="23" style={st.trackCircle} />
-          <circle cx="28" cy="28" r="23" style={{ ...st.arcCircle, stroke:timerColor, strokeDashoffset:`${144.5*(1-Math.min(pct,1))}`, transition:"stroke-dashoffset 0.95s linear, stroke 0.4s" }} />
-        </svg>
-        <span style={{ ...st.timerNum, color:timerColor, animation: timeLeft<=5 ? "timerPulse 0.5s ease-in-out infinite" : "none" }}>{timeLeft}</span>
-      </div>
-      <div style={st.hudBlock}>
-        <span style={{ ...st.hudBig, color:"#4a6fe8" }}>{lv.rows*COLS - poppedCount}</span>
-        <span style={st.hudSub}>quedan</span>
+      <div style={{ display:"flex", alignItems:"center", gap:14 }}>
+        <button onClick={cycleAudio} style={st.iconBtn}>{AUDIO_ICON[audioMode]}</button>
+        <button onClick={reset} style={st.iconBtn} title="reiniciar">↺</button>
+        <button onClick={onMenu} style={st.iconBtn} title="menú">☰</button>
       </div>
     </div>
 
-    {levelUpMsg && (
-      <div style={{ ...st.levelBadge, ...st.levelBadgeUp }}>
-        ⬆️ Nivel {lv.level} · {BASE_TIME + lv.level - 1}s
-      </div>
-    )}
+    {/* ── Title spacer ── */}
+    <div style={st.titleSpacer}>
+      <div style={st.gameTitle}>bubble wrap</div>
+    </div>
 
-    {/* Sheet + result overlay stacked */}
-    <div style={{ position:"relative", width:"100%", flex:1, display:"flex", flexDirection:"column" }}>
-      {combo >= 3 && <div style={st.comboOverlay}>🔥 ×{combo}</div>}
-      <div ref={scrollRef} style={{ ...st.scrollSheet, height:"calc(100vh - 185px)" }} onScroll={handleScroll}>
-        <div ref={sheetRef} style={{ position:"relative" }}>
-          {splashes.map(sp => (
-            <div key={sp.id} className="splash" style={{ position:"absolute", zIndex:10, pointerEvents:"none", left:sp.cx, top:sp.cy, width:sp.size, height:sp.size, borderRadius:"50%", background:"rgba(190,215,240,0.85)", "--vx":`${sp.vx}px`, "--vy":`${sp.vy}px`, transform:"translate(-50%,-50%)" }} />
+    {/* ── Bubble sheet — background matches bubble backing ── */}
+    <div ref={scrollRef} style={st.sheet} onScroll={handleScroll}>
+      <div ref={sheetRef} style={{ position:"relative" }}>
+        {splashes.map(sp => (
+          <div key={sp.id} className="splash" style={{
+            position:"absolute", zIndex:10, pointerEvents:"none",
+            left:sp.cx, top:sp.cy, width:sp.size, height:sp.size,
+            borderRadius:"50%", background:"rgba(190,178,158,0.45)",
+            "--vx":`${sp.vx}px`, "--vy":`${sp.vy}px`,
+            transform:"translate(-50%,-50%)"
+          }} />
+        ))}
+        <div style={{ padding:`${GAP}px ${GAP}px ${GAP * 2}px` }}>
+          {rows.map((row, ri) => (
+            <div key={ri} style={{
+              display:"flex", justifyContent:"center",
+              marginLeft: ri % 2 === 1 ? ODD : 0,
+              height:RH, alignItems:"center", gap:GAP,
+            }}>
+              {row.map((b, ci) => (
+                <BubbleCell key={b.uid} bubble={b} bubbleSize={BS}
+                  sheetRef={sheetRef} skin={currentSkin}
+                  onPop={(cx, cy, ps, sp, pd) => popBubble(ri, ci, cx, cy, ps, sp, pd)} />
+              ))}
+            </div>
           ))}
-          <div style={{ padding:"8px 6px 12px" }}>
-            {rows.map((row, ri) => (
-              <div key={ri} style={{ display:"flex", justifyContent:"center", marginLeft: ri%2===1 ? ODD : 0, marginTop: ri===0 ? 0 : BS*0.08, height:RH, alignItems:"center" }}>
-                {row.map((b, ci) => (
-                  <BubbleCell key={b.uid} bubble={b} bubbleSize={BS} sheetRef={sheetRef} skin={currentSkin}
-                    onPop={(cx,cy) => popBubble(ri, ci, cx, cy)} refilling={false} />
-                ))}
-              </div>
-            ))}
-          </div>
         </div>
       </div>
-
-      {/* Result overlays — on top of bubbles */}
-      {gameState === "won" && (
-        <div style={st.resultOverlay}>
-          <div style={st.resultEmoji}>🎉</div>
-          <div style={{ ...st.overTitle, color:"#1a7a40" }}>¡GANASTE!</div>
-          <div style={st.overScore}>{finalScore}</div>
-          <div style={st.overSub}>puntos · nivel {lv.level}</div>
-          {finalScore === hs && finalScore > 0 && <div style={st.newBest}>🏆 ¡Nuevo récord!</div>}
-          <button style={{ ...st.btn, background:"linear-gradient(135deg,#40d080,#20a050)" }} onClick={startGame}>Otra vez</button>
-          <button style={{ ...st.btnSec }} onClick={onHome}>Inicio</button>
-        </div>
-      )}
-      {gameState === "lost" && (
-        <div style={st.resultOverlay}>
-          <div style={st.resultEmoji}>⏱️</div>
-          <div style={{ ...st.overTitle, color:"#b02020" }}>¡Tiempo!</div>
-          <div style={st.overScore}>{finalScore}</div>
-          <div style={st.overSub}>puntos · nivel {lv.level}</div>
-          {finalScore === hs && finalScore > 0 && <div style={st.newBest}>🏆 ¡Nuevo récord!</div>}
-          <button style={{ ...st.btn, background:"linear-gradient(135deg,#f06060,#c02828)" }} onClick={startGame}>Otra vez</button>
-          <button style={{ ...st.btnSec }} onClick={onHome}>Inicio</button>
-        </div>
-      )}
     </div>
+
+    <div style={st.adBanner} />
+
   </div>
 </div>
 ```
 
-);
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// BUBBLE CELL
-// ═══════════════════════════════════════════════════════════════════════════════
-function BubbleCell({ bubble, bubbleSize, onPop, sheetRef, refilling, skin }) {
-const { shineX, shineY, floatDelay, floatDuration, popped } = bubble;
-const [state, setState] = useState(popped ? “broken” : “intact”);
-const cellRef = useRef(null);
-
-useEffect(() => {
-if (refilling && state === “broken”) {
-const t = setTimeout(() => setState(“intact”), Math.random()*300);
-return () => clearTimeout(t);
-}
-}, [refilling]);
-useEffect(() => { if (!refilling) setState(popped ? “broken” : “intact”); }, [popped]);
-
-const getCenter = () => {
-if (!cellRef.current || !sheetRef.current) return { cx:0, cy:0 };
-const cr = cellRef.current.getBoundingClientRect();
-const sr = sheetRef.current.getBoundingClientRect();
-return { cx: cr.left - sr.left + cr.width/2, cy: cr.top - sr.top + cr.height/2 };
-};
-
-const handleDown = (e) => { e.preventDefault(); if (state===“intact”) setState(“pressing”); };
-const handleUp   = (e) => {
-e.preventDefault();
-if (state !== “pressing”) return;
-setState(“popping”);
-const { cx, cy } = getCenter();
-onPop(cx, cy);
-setTimeout(() => setState(“broken”), 380);
-};
-
-const sz = bubbleSize;
-const s = skin || SKINS.classic;
-
-return (
-<div ref={cellRef}
-style={{ width:sz, height:sz, flexShrink:0, display:“flex”, alignItems:“center”, justifyContent:“center”, cursor: state===“intact”||state===“pressing” ? “pointer” : “default”, position:“relative”, overflow:“visible” }}
-onPointerDown={handleDown} onPointerUp={handleUp}
-onPointerLeave={() => { if (state===“pressing”) setState(“intact”); }}>
-
-```
-  {(state==="intact"||state==="pressing") && (
-    <div style={{
-      position:"relative", width:"92%", height:"92%",
-      transform: state==="pressing" ? "scale(0.78) scaleY(0.70)" : "scale(1)",
-      transition: state==="pressing" ? "transform 0.06s ease-out" : "transform 0.15s cubic-bezier(.34,1.56,.64,1)",
-      animation: state==="pressing" ? "none" : `bubbleFloat ${floatDuration}s ${floatDelay}s ease-in-out infinite`,
-      filter: state==="pressing" ? "brightness(1.25) saturate(1.5)" : "none",
-      willChange:"transform",
-    }}>
-      <div style={{ position:"absolute", inset:0, borderRadius:"50%", background: s.gradient, boxShadow: state==="pressing" ? `0 1px 4px rgba(60,100,140,0.4), 0 0 0 2.5px rgba(140,200,245,0.7)` : `0 3px 10px ${s.glow}, 0 1px 2px rgba(0,0,0,0.08), inset 0 -2px 5px rgba(60,100,150,0.15)` }} />
-      {state==="pressing" && <div style={{ position:"absolute", inset:"-12%", borderRadius:"50%", border:"2px solid rgba(140,200,245,0.55)", boxShadow:"0 0 14px rgba(120,185,235,0.45)" }} />}
-      <div style={{ position:"absolute", top:`${shineY}%`, left:`${shineX}%`, width:"40%", height:"23%", background:"rgba(255,255,255,0.97)", borderRadius:"50%", transform:"rotate(-30deg)", filter:"blur(1.5px)" }} />
-      <div style={{ position:"absolute", bottom:"16%", right:"14%", width:"20%", height:"12%", background:"rgba(255,255,255,0.5)", borderRadius:"50%", filter:"blur(2px)" }} />
-      <div style={{ position:"absolute", inset:0, borderRadius:"50%", boxShadow:"inset 0 0 0 1px rgba(255,255,255,0.4), inset 0 1px 4px rgba(255,255,255,0.45)" }} />
-    </div>
-  )}
-
-  {state==="popping" && <BurstSVG />}
-  {state==="broken"  && <BrokenSVG />}
-</div>
-```
-
-);
-}
-
-function BurstSVG() {
-return (
-<div style={{ position:“absolute”, inset:”-15%”, pointerEvents:“none” }}>
-<svg viewBox=“0 0 130 130” style={{ width:“100%”, height:“100%”, overflow:“visible” }}>
-<defs>
-<radialGradient id="pf" cx="45%" cy="38%" r="65%">
-<stop offset="0%" stopColor="rgba(255,255,255,0.9)" />
-<stop offset="25%" stopColor="rgba(200,235,255,0.7)" />
-<stop offset="50%" stopColor="rgba(210,195,255,0.65)" />
-<stop offset="75%" stopColor="rgba(170,235,220,0.55)" />
-<stop offset="100%" stopColor="rgba(190,215,245,0.35)" />
-</radialGradient>
-<radialGradient id="ps" cx="60%" cy="55%" r="50%">
-<stop offset="0%" stopColor="rgba(255,210,240,0.5)" />
-<stop offset="50%" stopColor="rgba(190,240,255,0.4)" />
-<stop offset="100%" stopColor="rgba(210,255,230,0.2)" />
-</radialGradient>
-</defs>
-<g style={{ animation:“popSequence 0.38s cubic-bezier(0.25,0.46,0.45,0.94) forwards”, transformOrigin:“65px 65px” }}>
-<path d="M65,32 C78,26 92,30 95,42 C100,50 96,58 92,62 C98,68 100,80 93,86 C86,93 74,92 68,87 C62,96 50,98 41,93 C32,88 28,78 33,69 C24,64 20,52 27,43 C32,34 46,28 55,31 Z" fill="url(#pf)" stroke="rgba(200,220,248,0.6)" strokeWidth="0.8" />
-<path d="M65,32 C78,26 92,30 95,42 C100,50 96,58 92,62 C98,68 100,80 93,86 C86,93 74,92 68,87 C62,96 50,98 41,93 C32,88 28,78 33,69 C24,64 20,52 27,43 C32,34 46,28 55,31 Z" fill="url(#ps)" />
-<path d="M95,42 C102,35 106,30 103,22 C101,17 95,19 93,24" fill="none" stroke="rgba(200,225,248,0.6)" strokeWidth="1.1" strokeLinecap="round"/>
-<path d="M93,86 C100,93 102,100 98,105 C95,108 89,106 88,100" fill="none" stroke="rgba(195,222,248,0.55)" strokeWidth="1" strokeLinecap="round"/>
-<path d="M41,93 C36,102 30,107 23,104 C18,102 18,95 23,93" fill="none" stroke="rgba(200,225,248,0.5)" strokeWidth="1" strokeLinecap="round"/>
-<path d="M27,43 C18,38 12,33 10,24 C8,17 14,13 19,17" fill="none" stroke="rgba(200,225,248,0.55)" strokeWidth="1" strokeLinecap="round"/>
-<circle cx="104" cy="24" r="2.4" fill="rgba(210,232,250,0.6)"/>
-<circle cx="108" cy="31" r="1.4" fill="rgba(215,235,252,0.5)"/>
-<circle cx="100" cy="108" r="2.2" fill="rgba(210,230,250,0.55)"/>
-<circle cx="20" cy="106" r="2" fill="rgba(210,230,250,0.52)"/>
-<circle cx="13" cy="22" r="2.2" fill="rgba(210,230,250,0.55)"/>
-<circle cx="38" cy="5" r="2" fill="rgba(210,230,250,0.5)"/>
-<ellipse cx="54" cy="48" rx="11" ry="6" fill="rgba(255,255,255,0.38)" transform="rotate(-25,54,48)"/>
-<ellipse cx="76" cy="72" rx="8" ry="4" fill="rgba(255,255,255,0.25)" transform="rotate(15,76,72)"/>
-</g>
-</svg>
-</div>
-);
-}
-
-function BrokenSVG() {
-return (
-<div style={{ position:“absolute”, inset:”-15%”, pointerEvents:“none” }}>
-<svg viewBox=“0 0 130 130” style={{ width:“100%”, height:“100%”, overflow:“visible” }}>
-<defs>
-<radialGradient id="bf" cx="45%" cy="38%" r="65%">
-<stop offset="0%" stopColor="rgba(255,255,255,0.75)" />
-<stop offset="25%" stopColor="rgba(200,232,255,0.55)" />
-<stop offset="50%" stopColor="rgba(208,192,255,0.5)" />
-<stop offset="75%" stopColor="rgba(168,232,218,0.45)" />
-<stop offset="100%" stopColor="rgba(188,212,244,0.28)" />
-</radialGradient>
-<radialGradient id="bs" cx="60%" cy="55%" r="50%">
-<stop offset="0%" stopColor="rgba(255,208,238,0.38)" />
-<stop offset="50%" stopColor="rgba(188,238,255,0.32)" />
-<stop offset="100%" stopColor="rgba(208,255,228,0.18)" />
-</radialGradient>
-</defs>
-<path d="M65,32 C78,26 92,30 95,42 C100,50 96,58 92,62 C98,68 100,80 93,86 C86,93 74,92 68,87 C62,96 50,98 41,93 C32,88 28,78 33,69 C24,64 20,52 27,43 C32,34 46,28 55,31 Z" fill="url(#bf)" stroke="rgba(198,218,244,0.45)" strokeWidth="0.8" />
-<path d="M65,32 C78,26 92,30 95,42 C100,50 96,58 92,62 C98,68 100,80 93,86 C86,93 74,92 68,87 C62,96 50,98 41,93 C32,88 28,78 33,69 C24,64 20,52 27,43 C32,34 46,28 55,31 Z" fill="url(#bs)" />
-<path d="M95,42 C102,35 106,30 103,22" fill="none" stroke="rgba(198,222,246,0.5)" strokeWidth="1.1" strokeLinecap="round"/>
-<path d="M93,86 C100,93 102,100 98,105" fill="none" stroke="rgba(193,219,246,0.45)" strokeWidth="1" strokeLinecap="round"/>
-<path d="M41,93 C36,102 30,107 23,104" fill="none" stroke="rgba(198,222,246,0.42)" strokeWidth="1" strokeLinecap="round"/>
-<path d="M27,43 C18,38 12,33 10,24" fill="none" stroke="rgba(198,222,246,0.48)" strokeWidth="1" strokeLinecap="round"/>
-<circle cx="104" cy="24" r="2.4" fill="rgba(208,230,248,0.5)"/>
-<circle cx="100" cy="108" r="2.2" fill="rgba(208,228,248,0.48)"/>
-<circle cx="13" cy="22" r="2.2" fill="rgba(208,228,248,0.48)"/>
-<circle cx="38" cy="5" r="2" fill="rgba(208,228,248,0.44)"/>
-<ellipse cx="54" cy="48" rx="11" ry="6" fill="rgba(255,255,255,0.28)" transform="rotate(-25,54,48)"/>
-<ellipse cx="76" cy="72" rx="8" ry="4" fill="rgba(255,255,255,0.18)" transform="rotate(15,76,72)"/>
-</svg>
-</div>
 );
 }
 
@@ -1134,128 +1115,101 @@ return (
 // ROOT
 // ═══════════════════════════════════════════════════════════════════════════════
 export default function App() {
-const [screen, setScreen] = useState(“home”);
-const [mode, setMode]     = useState(null);
-const activeSkin  = load(“activeSkin”, “classic”);
+const [screen, setScreen] = useState(“game”);
+const activeSkin  = load(“activeSkin”,  “classic”);
 const activeSound = load(“activeSound”, “classic”);
-
-if (screen === “home”)         return <HomeScreen onSelect={(m) => { setMode(m); setScreen(“game”); }} onShop={() => setScreen(“shop”)} onStats={() => setScreen(“stats”)} onAchievements={() => setScreen(“achievements”)} />;
-if (screen === “shop”)         return <ShopScreen onBack={() => setScreen(“home”)} />;
-if (screen === “stats”)        return <StatsScreen onBack={() => setScreen(“home”)} />;
-if (screen === “achievements”) return <AchievementsScreen onBack={() => setScreen(“home”)} />;
-if (mode === “chill”)          return <ChillMode onHome={() => { setScreen(“home”); setMode(null); }} skin={activeSkin} soundSkin={activeSound} />;
-if (mode === “time”)           return <TimeAttackMode onHome={() => { setScreen(“home”); setMode(null); }} skin={activeSkin} soundSkin={activeSound} />;
-return null;
+if (screen === “shop”)     return <ShopScreen     onBack={() => setScreen(“game”)} />;
+if (screen === “settings”) return <SettingsScreen onBack={() => setScreen(“game”)} />;
+return <ChillMode
+onMenu={() => setScreen(“shop”)}
+skin={activeSkin} soundSkin={activeSound}
+/>;
 }
+
+// ─── Palette ──────────────────────────────────────────────────────────────────
+const C = {
+bg:       “#e8d8b8”,
+sheet:    “rgba(220,210,192,0.45)”,
+paper:    “#f2e8d4”,
+ink:      “#332e24”,
+inkMid:   “#5a4e3c”,
+inkLight: “#988070”,
+accent:   “#74624e”,
+border:   “rgba(128,108,80,0.22)”,
+};
 
 // ─── CSS ──────────────────────────────────────────────────────────────────────
 const css = `
-@import url(‘https://fonts.googleapis.com/css2?family=Nunito:wght@700;900&family=Fredoka+One&display=swap’);
+@import url(‘https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@300;400;500&family=DM+Sans:opsz,wght@9..40,300;9..40,400&display=swap’);
 
 - { box-sizing:border-box; margin:0; padding:0; touch-action:manipulation; -webkit-tap-highlight-color:transparent; }
-  @keyframes bubbleFloat  { 0%,100% { transform:translateY(0) scale(1); } 50% { transform:translateY(-2px) scale(1.012); } }
-  @keyframes bubbleFloat3 { 0%,100% { transform:translateY(0); } 50% { transform:translateY(-8px); } }
-  @keyframes homeBubbleRise { 0% { transform:translateY(0) scale(1); opacity:0.7; } 100% { transform:translateY(-110vh) scale(0.6); opacity:0; } }
-  @keyframes timerPulse   { 0%,100% { transform:translate(-50%,-50%) scale(1); } 50% { transform:translate(-50%,-50%) scale(1.22); } }
-  @keyframes fadeInUp     { from { opacity:0; transform:translateY(14px); } to { opacity:1; transform:translateY(0); } }
-  @keyframes confettiFall { 0% { transform:translateY(0) translateX(0) rotate(0deg); opacity:1; } 100% { transform:translateY(108vh) translateX(var(–drift)) rotate(calc(var(–rot)*4)); opacity:0; } }
-  @keyframes celebPop     { 0% { transform:scale(0.3); opacity:0; } 65% { transform:scale(1.15); } 100% { transform:scale(1); opacity:1; } }
-  @keyframes splash       { 0% { opacity:1; transform:translate(-50%,-50%) translate(0,0) scale(1); } 100% { opacity:0; transform:translate(-50%,-50%) translate(var(–vx),var(–vy)) scale(0.05); } }
-  @keyframes popSequence  { 0% { transform:scale(0.82) scaleY(0.75); opacity:0.9; filter:brightness(1.3) saturate(1.6); } 15% { transform:scale(1.18) scaleY(0.88); opacity:1; filter:brightness(1.5) saturate(2); } 40% { transform:scale(1.08) rotate(8deg); opacity:1; } 100% { transform:scale(1) rotate(0deg); opacity:1; filter:brightness(1); } }
-  @keyframes achSlideIn   { from { transform:translateX(120%); opacity:0; } to { transform:translateX(0); opacity:1; } }
-  @keyframes scoreFlash   { 0%,100% { transform:scale(1); } 50% { transform:scale(1.18); color:#9860f8; } }
-  .bubbleFloat  { animation:bubbleFloat 2.8s ease-in-out infinite; }
-  .bubbleFloat3 { animation:bubbleFloat3 3s ease-in-out infinite; }
-  .homeBubble   { animation:homeBubbleRise linear infinite; }
-  .confettiPiece { animation:confettiFall linear forwards; }
-  .splash       { animation:splash 0.45s ease-out forwards; }
-  `;
+
+@keyframes splash    { 0%{opacity:.6;transform:translate(-50%,-50%) translate(0,0) scale(1)} 100%{opacity:0;transform:translate(-50%,-50%) translate(var(–vx),var(–vy)) scale(.05)} }
+@keyframes burstAnim { 0%{opacity:1;transform:scale(.55)} 45%{opacity:1;transform:scale(1.08)} 100%{opacity:0;transform:scale(1.02)} }
+@keyframes fadeUp    { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
+@keyframes specialPulse { 0%,100%{opacity:1} 50%{opacity:0.65} }
+
+.splash { animation: splash 0.42s ease-out forwards; }
+`;
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 const st = {
-root: { minHeight:“100vh”, height:“100vh”, fontFamily:”‘Nunito’, sans-serif”, display:“flex”, flexDirection:“column”, alignItems:“center”, userSelect:“none”, WebkitUserSelect:“none”, overflowX:“hidden” },
-bg:   { position:“fixed”, inset:0, zIndex:0, background:“linear-gradient(150deg,#dff0ff 0%,#f0e4ff 55%,#e4fff0 100%)” },
+root: { minHeight:“100vh”, height:“100vh”, fontFamily:”‘DM Sans’, sans-serif”, fontWeight:300, display:“flex”, flexDirection:“column”, alignItems:“center”, userSelect:“none”, WebkitUserSelect:“none”, overflowX:“hidden”, color: C.ink },
 
-// Home
-homeWrap: { position:“relative”, zIndex:1, width:“100%”, maxWidth:“400px”, padding:“48px 20px 40px”, display:“flex”, flexDirection:“column”, alignItems:“center”, gap:“16px” },
-homeLogo: { fontSize:“64px” },
-homeTitle: { fontFamily:”‘Fredoka One’, cursive”, fontSize:“38px”, color:”#4a6fe8”, letterSpacing:“0.02em” },
-homeSub:  { fontSize:“15px”, color:”#9aaace”, letterSpacing:“0.1em”, marginTop:”-8px” },
-modeCards: { width:“100%”, display:“flex”, flexDirection:“column”, gap:“14px”, marginTop:“12px” },
-modeCard: { width:“100%”, padding:“22px 20px”, borderRadius:“20px”, border:“none”, cursor:“pointer”, textAlign:“left”, display:“flex”, flexDirection:“column”, gap:“6px”, boxShadow:“0 4px 20px rgba(100,130,220,0.15)”, animation:“fadeInUp 0.4s ease” },
-modeInf:  { background:“linear-gradient(135deg,rgba(220,240,255,0.95),rgba(200,220,255,0.9))”, borderLeft:“4px solid #4a9fe8” },
-modeTime: { background:“linear-gradient(135deg,rgba(255,235,220,0.95),rgba(255,215,200,0.9))”, borderLeft:“4px solid #e87a20” },
-modeEmoji: { fontSize:“28px” },
-modeName:  { fontFamily:”‘Fredoka One’, cursive”, fontSize:“20px”, color:”#2a3a6a” },
-modeDesc:  { fontSize:“13px”, color:”#6a7aaa”, lineHeight:1.5 },
-modeHS:    { fontSize:“12px”, fontWeight:900, color:”#c08020”, marginTop:“4px” },
-homeActions: { display:“flex”, gap:“10px”, flexWrap:“wrap”, justifyContent:“center” },
-homeBtn: { fontFamily:”‘Fredoka One’, cursive”, fontSize:“15px”, padding:“10px 18px”, borderRadius:“50px”, border:“none”, background:“rgba(255,255,255,0.75)”, color:”#4a6fe8”, cursor:“pointer”, boxShadow:“0 2px 10px rgba(100,130,220,0.12)” },
+// Pages
+pageWrap: { position:“relative”, zIndex:1, width:“100%”, maxWidth:“390px”, padding:“16px 20px 48px”, display:“flex”, flexDirection:“column”, gap:“9px” },
+pageHeader: { display:“flex”, alignItems:“center”, justifyContent:“space-between”, paddingBottom:“12px”, borderBottom:`1px solid ${C.border}`, marginBottom:4 },
+pageTitle: { fontFamily:”‘Zen Maru Gothic’, sans-serif”, fontWeight:300, fontSize:“20px”, color: C.ink, letterSpacing:“0.06em” },
+coinsVal: { fontSize:“12px”, color: C.inkMid, letterSpacing:“0.05em” },
+sectionLabel: { fontSize:“10px”, color: C.inkLight, letterSpacing:“0.14em”, textTransform:“uppercase”, marginTop:6, marginBottom:2 },
+shopGrid: { display:“grid”, gridTemplateColumns:“repeat(2,1fr)”, gap:“7px” },
+shopCard: { background: C.paper, borderRadius:“2px”, padding:“12px 10px”, display:“flex”, flexDirection:“column”, alignItems:“center”, gap:“5px”, border:`1px solid ${C.border}` },
+shopCardOn: { borderColor: C.accent, background:“rgba(242,236,224,0.95)” },
+shopItemName: { fontSize:“11px”, color: C.inkMid, letterSpacing:“0.05em” },
+shopBadge: { fontSize:“10px”, color: C.accent, letterSpacing:“0.09em” },
+shopBtnSec: { fontSize:“10px”, color: C.accent, background:“none”, border:`1px solid ${C.accent}`, borderRadius:“2px”, padding:“3px 11px”, cursor:“pointer”, letterSpacing:“0.05em” },
+shopBtnBuy: { fontSize:“11px”, color: C.paper, background: C.accent, border:“none”, borderRadius:“2px”, padding:“4px 13px”, cursor:“pointer”, letterSpacing:“0.04em” },
+shopNote: { fontSize:“10px”, color: C.inkLight, textAlign:“center”, marginTop:4, letterSpacing:“0.05em” },
+backBtn: { fontSize:“11px”, fontWeight:300, color: C.inkLight, background:“none”, border:“none”, cursor:“pointer”, letterSpacing:“0.07em”, padding:0, fontFamily:”‘DM Sans’, sans-serif” },
+settingRow: { display:“flex”, alignItems:“center”, gap:“12px”, padding:“13px 15px”, background: C.paper, borderRadius:“2px”, border:`1px solid ${C.border}` },
+settingLabel: { flex:1, fontSize:“13px”, color: C.inkMid, letterSpacing:“0.04em” },
+toggle: { width:“44px”, height:“24px”, borderRadius:“12px”, cursor:“pointer”, position:“relative”, transition:“background 0.25s”, flexShrink:0 },
+toggleKnob: { position:“absolute”, top:“3px”, width:“18px”, height:“18px”, borderRadius:“50%”, background:“white”, boxShadow:“0 1px 3px rgba(0,0,0,0.15)”, transition:“transform 0.2s” },
 
-// Shop
-shopWrap: { position:“relative”, zIndex:1, width:“100%”, maxWidth:“400px”, padding:“16px 16px 40px”, display:“flex”, flexDirection:“column”, gap:“12px” },
-shopHeader: { display:“flex”, alignItems:“center”, justifyContent:“space-between”, marginBottom:“4px” },
-shopTitle: { fontFamily:”‘Fredoka One’, cursive”, fontSize:“22px”, color:”#4a6fe8” },
-coinsDisplay: { fontFamily:”‘Fredoka One’, cursive”, fontSize:“16px”, color:”#c08020” },
-shopSection: { fontFamily:”‘Fredoka One’, cursive”, fontSize:“16px”, color:”#6a80b0”, marginTop:“8px” },
-shopGrid: { display:“grid”, gridTemplateColumns:“repeat(2,1fr)”, gap:“10px” },
-shopCard: { background:“rgba(255,255,255,0.7)”, borderRadius:“16px”, padding:“14px 10px”, display:“flex”, flexDirection:“column”, alignItems:“center”, gap:“6px”, border:“2px solid transparent”, boxShadow:“0 2px 10px rgba(100,130,220,0.1)” },
-shopCardActive: { borderColor:”#4a6fe8”, background:“rgba(220,235,255,0.8)” },
-shopItemName: { fontSize:“13px”, fontWeight:700, color:”#4a5a80” },
-shopActive: { fontSize:“12px”, color:”#4a6fe8”, fontWeight:900 },
-shopBtnSec: { fontSize:“12px”, fontWeight:700, color:”#4a6fe8”, background:“none”, border:“1.5px solid #4a6fe8”, borderRadius:“20px”, padding:“4px 12px”, cursor:“pointer” },
-shopBtnBuy: { fontSize:“13px”, fontWeight:900, color:“white”, background:“linear-gradient(135deg,#60a8f8,#9860f8)”, border:“none”, borderRadius:“20px”, padding:“5px 14px”, cursor:“pointer” },
-shopNote: { fontSize:“12px”, color:”#9aaace”, textAlign:“center”, marginTop:“8px” },
+// Corner menu
+menuToggle: { width:40, height:40, borderRadius:“50%”, border:`1px solid ${C.border}`, background:“rgba(240,234,222,0.80)”, backdropFilter:“blur(8px)”, cursor:“pointer”, display:“flex”, alignItems:“center”, justifyContent:“center”, boxShadow:`0 2px 10px rgba(80,65,45,0.10)` },
+menuItem: { fontFamily:”‘DM Sans’, sans-serif”, fontWeight:300, fontSize:“12px”, letterSpacing:“0.07em”, color: C.inkMid, background:“rgba(240,234,222,0.90)”, backdropFilter:“blur(8px)”, border:`1px solid ${C.border}`, borderRadius:“2px”, padding:“7px 15px”, cursor:“pointer”, boxShadow:`0 1px 8px rgba(80,65,45,0.09)`, whiteSpace:“nowrap” },
 
-// Stats
-statRow: { display:“flex”, alignItems:“center”, gap:“12px”, background:“rgba(255,255,255,0.65)”, borderRadius:“14px”, padding:“12px 16px”, boxShadow:“0 2px 8px rgba(100,130,220,0.08)” },
-statEmoji: { fontSize:“22px”, width:“32px”, textAlign:“center” },
-statLabel: { flex:1, fontSize:“14px”, color:”#4a5a80”, fontWeight:700 },
-statVal:   { fontFamily:”‘Fredoka One’, cursive”, fontSize:“18px”, color:”#4a6fe8” },
+// Game
+wrap: { position:“relative”, zIndex:1, width:“100%”, maxWidth:“390px”, height:“100vh”, padding:“12px 12px 10px”, display:“flex”, flexDirection:“column” },
 
-// Achievements
-achRow: { display:“flex”, alignItems:“center”, gap:“12px”, background:“rgba(255,255,255,0.65)”, borderRadius:“14px”, padding:“12px 16px”, boxShadow:“0 2px 8px rgba(100,130,220,0.08)”, transition:“opacity 0.3s” },
-achRowName: { fontSize:“14px”, fontWeight:900, color:”#2a3a6a” },
-achRowDesc: { fontSize:“12px”, color:”#8a9ac0” },
-achDone: { fontSize:“16px”, color:”#4a6fe8”, marginLeft:“auto” },
+header: { width:“100%”, display:“flex”, alignItems:“center”, justifyContent:“space-between”, flexShrink:0, paddingBottom:10 },
+headerScoreNum: { fontFamily:”‘Zen Maru Gothic’, sans-serif”, fontWeight:300, fontSize:“22px”, color: C.ink, lineHeight:1 },
+headerScoreHs: { fontSize:“10px”, color: C.inkLight, letterSpacing:“0.04em” },
+comboTag: { fontSize:“10px”, color: C.accent, letterSpacing:“0.08em”, border:`1px solid ${C.border}`, padding:“2px 6px”, borderRadius:“1px”, marginLeft:4 },
+iconBtn: { background:“none”, border:“none”, fontSize:“17px”, cursor:“pointer”, color: C.inkLight, padding:“2px 3px”, lineHeight:1, fontFamily:”‘DM Sans’, sans-serif” },
 
-// Achievement toast
-achToast: { position:“fixed”, top:16, right:16, zIndex:200, display:“flex”, alignItems:“center”, gap:“12px”, background:“rgba(255,255,255,0.95)”, borderRadius:“16px”, padding:“12px 16px”, boxShadow:“0 4px 20px rgba(100,130,220,0.25)”, border:“1.5px solid rgba(100,150,220,0.3)”, animation:“achSlideIn 0.4s ease”, maxWidth:“280px” },
-achName: { fontSize:“13px”, fontWeight:900, color:”#2a3a6a” },
-achDesc: { fontSize:“11px”, color:”#8a9ac0” },
+// Title spacer
+titleSpacer: { flexShrink:0, height:“12vh”, display:“flex”, flexDirection:“column”, alignItems:“center”, justifyContent:“center”, gap:6, animation:“fadeUp 0.5s ease” },
+gameTitle: { fontFamily:”‘Zen Maru Gothic’, sans-serif”, fontWeight:300, fontSize:“26px”, color: C.ink, letterSpacing:“0.08em”, opacity:0.88 },
+gameSub: { fontSize:“10px”, color: C.inkLight, letterSpacing:“0.18em”, fontWeight:300 },
 
-// Game shared
-wrap: { position:“relative”, zIndex:1, width:“100%”, maxWidth:“400px”, minHeight:“100vh”, padding:“12px 12px 16px”, display:“flex”, flexDirection:“column”, alignItems:“center”, gap:“8px” },
-header: { width:“100%”, display:“flex”, alignItems:“center”, justifyContent:“space-between”, flexShrink:0 },
-backBtn: { fontFamily:”‘Nunito’, sans-serif”, fontSize:“13px”, fontWeight:700, color:”#7a90c8”, background:“none”, border:“none”, cursor:“pointer”, padding:“6px 0” },
-modeTag: { fontFamily:”‘Fredoka One’, cursive”, fontSize:“16px”, color:”#4a6fe8” },
-headerScore: { display:“flex”, alignItems:“baseline”, gap:“3px” },
-headerScoreNum: { fontFamily:”‘Fredoka One’, cursive”, fontSize:“22px”, color:”#4a6fe8” },
-headerScoreSub: { fontSize:“11px”, color:”#9aaace” },
-bestRow: { fontSize:“12px”, color:”#b09040”, fontWeight:700, letterSpacing:“0.04em” },
-comboOverlay: { position:“absolute”, top:8, right:12, zIndex:20, fontSize:“13px”, fontWeight:900, color:”#e040a0”, pointerEvents:“none”, background:“rgba(255,255,255,0.8)”, borderRadius:“20px”, padding:“3px 10px”, boxShadow:“0 2px 8px rgba(220,60,160,0.15)” },
-hud: { width:“100%”, display:“flex”, alignItems:“center”, justifyContent:“space-between”, background:“rgba(255,255,255,0.72)”, borderRadius:“18px”, padding:“10px 22px”, boxShadow:“0 2px 14px rgba(100,130,220,0.1)”, border:“1px solid rgba(200,215,255,0.6)” },
-hudBlock: { display:“flex”, flexDirection:“column”, alignItems:“center”, minWidth:“52px” },
-hudBig: { fontFamily:”‘Fredoka One’, cursive”, fontSize:“24px”, color:”#4a6fe8”, lineHeight:1 },
-hudSub: { fontSize:“10px”, color:”#9aaace”, textTransform:“uppercase”, letterSpacing:“0.08em” },
-timerWrap: { position:“relative”, width:“58px”, height:“58px”, display:“flex”, alignItems:“center”, justifyContent:“center” },
-timerSvg: { position:“absolute”, inset:0, transform:“rotate(-90deg)”, width:“100%”, height:“100%” },
-trackCircle: { fill:“none”, stroke:“rgba(160,180,230,0.22)”, strokeWidth:5 },
-arcCircle: { fill:“none”, strokeWidth:5, strokeLinecap:“round”, strokeDasharray:“144.5” },
-timerNum: { position:“absolute”, top:“50%”, left:“50%”, transform:“translate(-50%,-50%)”, fontFamily:”‘Fredoka One’, cursive”, fontSize:“22px”, lineHeight:1 },
-levelBadge: { fontSize:“12px”, fontWeight:700, letterSpacing:“0.05em”, padding:“5px 14px”, borderRadius:“20px”, background:“rgba(255,255,255,0.7)”, color:”#6a80b0”, border:“1px solid rgba(200,215,255,0.5)”, transition:“all 0.3s” },
-levelBadgeUp: { background:“rgba(255,220,50,0.95)”, color:”#7a4800”, transform:“scale(1.08)” },
-sheet: { position:“relative”, width:“100%”, flex:1, background:“rgba(195,212,230,0.38)”, borderRadius:“20px”, boxShadow:“0 6px 32px rgba(100,130,220,0.12), inset 0 1px 0 rgba(255,255,255,0.8)”, border:“1px solid rgba(170,195,220,0.5)”, overflow:“hidden” },
-scrollSheet: { width:“100%”, flex:1, minHeight:0, height:“calc(100vh - 140px)”, overflowY:“auto”, background:“rgba(195,212,230,0.38)”, borderRadius:“20px”, boxShadow:“0 6px 32px rgba(100,130,220,0.12), inset 0 1px 0 rgba(255,255,255,0.8)”, border:“1px solid rgba(170,195,220,0.5)”, WebkitOverflowScrolling:“touch” },
-refillLayer: { position:“absolute”, inset:0, zIndex:10, borderRadius:“18px”, display:“flex”, alignItems:“center”, justifyContent:“center”, background:“rgba(225,240,255,0.9)” },
-refillMsg: { fontFamily:”‘Fredoka One’, cursive”, fontSize:“26px”, color:”#4a6fe8” },
-panel: { width:“100%”, display:“flex”, flexDirection:“column”, alignItems:“center”, gap:“12px”, background:“rgba(255,255,255,0.72)”, borderRadius:“18px”, padding:“24px 20px”, boxShadow:“0 4px 20px rgba(100,130,220,0.1)”, border:“1px solid rgba(200,215,255,0.6)”, animation:“fadeInUp 0.4s ease” },
-panelInfo: { fontSize:“15px”, color:”#6a82b0”, textAlign:“center”, lineHeight:1.65 },
-btn: { fontFamily:”‘Fredoka One’, cursive”, fontSize:“19px”, letterSpacing:“0.04em”, color:“white”, background:“linear-gradient(135deg,#60a8f8,#9860f8)”, border:“none”, borderRadius:“50px”, padding:“13px 44px”, cursor:“pointer”, boxShadow:“0 4px 18px rgba(100,100,240,0.32)” },
-resultEmoji: { fontSize:“50px”, animation:“celebPop 0.5s ease forwards” },
-overTitle: { fontFamily:”‘Fredoka One’, cursive”, fontSize:“28px” },
-overScore: { fontFamily:”‘Fredoka One’, cursive”, fontSize:“58px”, color:”#3020c0”, lineHeight:1 },
-overSub: { fontSize:“16px”, color:”#9aaace”, marginTop:”-4px” },
-resultMsg: { fontSize:“15px”, textAlign:“center”, fontWeight:700 },
-newBest: { fontSize:“14px”, fontWeight:900, color:”#c08020”, letterSpacing:“0.05em” },
+// Sheet — transparent, floats over sand bg
+sheet: {
+width:“100%”, flex:1, minHeight:0,
+overflowY:“auto”,
+background: “rgba(220,210,192,0.45)”,
+borderRadius:“18px”,
+boxShadow:“0 -8px 36px rgba(90,72,48,0.14), 0 -1px 0 rgba(230,218,195,0.55)”,
+WebkitOverflowScrolling:“touch”,
+},
+
+adBanner: {
+flexShrink:0, height:50,
+display:“flex”, alignItems:“center”, justifyContent:“center”,
+background:“rgba(195,182,160,0.38)”,
+borderRadius:“14px”,
+marginTop: 6,
+borderTop:`none`,
+},
 };
